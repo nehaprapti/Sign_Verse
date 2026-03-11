@@ -17,6 +17,7 @@ function Navbar() {
                     <ul className="navbar-nav ms-auto my-2 my-lg-0">
                         <li className="nav-item"><Link to='/sign-kit/convert' className="nav-link">Convert</Link></li>
                         <li className="nav-item"><Link to='/sign-kit/learn-sign' className="nav-link">Learn Sign</Link></li>
+                        <li className="nav-item"><Link to='/sign-kit/simulate' className="nav-link">Simulate</Link></li>
                     </ul>
                 </div>
             </div>
