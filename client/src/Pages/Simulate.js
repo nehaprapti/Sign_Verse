@@ -17,6 +17,23 @@ const LEFT_ARM_CANDIDATES = ['mixamorigLeftArm', 'LeftArm'];
 const RIGHT_ARM_CANDIDATES = ['mixamorigRightArm', 'RightArm'];
 const LEFT_FOREARM_CANDIDATES = ['mixamorigLeftForeArm', 'LeftForeArm'];
 const RIGHT_FOREARM_CANDIDATES = ['mixamorigRightForeArm', 'RightForeArm'];
+const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+const DEFAULT_FINGER_CLOSE_LEVELS = {
+  thumb: 3,
+  index: 3,
+  middle: 3,
+  ring: 3,
+  pinky: 3,
+};
+const OPEN_FINGER_LEVELS = {
+  thumb: 0,
+  index: 0,
+  middle: 0,
+  ring: 0,
+  pinky: 0,
+};
+
+const MOVELIST_STORAGE_KEY = 'signverse_custom_movelists';
 
 const toVector = (vector) => ({
   x: Number(vector.x.toFixed(4)),
@@ -30,25 +47,58 @@ const clampRotation = (value) => {
   return Math.max(min, Math.min(max, value));
 };
 
+const clampToRange = (value, min, max) => {
+  return Math.max(min, Math.min(max, value));
+};
+
+const normalizeAngle = (angle) => {
+  let normalized = angle;
+  while (normalized > Math.PI) {
+    normalized -= Math.PI * 2;
+  }
+  while (normalized < -Math.PI) {
+    normalized += Math.PI * 2;
+  }
+  return normalized;
+};
+
+const lerpAngle = (from, to, t) => {
+  const shortest = normalizeAngle(to - from);
+  return clampRotation(from + shortest * t);
+};
+
 function Simulate() {
   const [bot, setBot] = useState(ybot);
   const [wordName, setWordName] = useState('ABBREVIATION');
+  const [poseName, setPoseName] = useState('Pose 1');
   const [selectedHand, setSelectedHand] = useState('left');
+  const [fingerCloseLevels, setFingerCloseLevels] = useState(DEFAULT_FINGER_CLOSE_LEVELS);
   const [stationaryFinger, setStationaryFinger] = useState('index');
   const [movingFinger, setMovingFinger] = useState('thumb');
   const [moveStep, setMoveStep] = useState(0.02);
   const [rotationStep, setRotationStep] = useState(0.05);
   const [cameraZoom, setCameraZoom] = useState(1.6);
+  const [cameraPoseEnabled, setCameraPoseEnabled] = useState(false);
+  const [cameraHandMapping, setCameraHandMapping] = useState('selected');
+  const [cameraFingerMappingEnabled, setCameraFingerMappingEnabled] = useState(true);
+  const [markedPoses, setMarkedPoses] = useState([]);
+  const [isPosePlaybackActive, setIsPosePlaybackActive] = useState(false);
+  const [isPoseLoopEnabled, setIsPoseLoopEnabled] = useState(false);
   const [capturedFrames, setCapturedFrames] = useState([]);
   const [statusMessage, setStatusMessage] = useState('Use keyboard/mouse to pose the avatar hands.');
   const selectedHandRef = useRef('left');
   const moveStepRef = useRef(0.02);
   const rotationStepRef = useRef(0.05);
+  const cameraVideoRef = useRef(null);
 
   const componentRef = useRef({
     isMouseDown: false,
     animationFrameId: null,
     fingerMotionFrameId: null,
+    cameraPoseFrameId: null,
+    posePlaybackFrameId: null,
+    cameraStream: null,
+    handLandmarker: null,
   });
   const { current: ref } = componentRef;
 
@@ -150,6 +200,386 @@ function Simulate() {
     }
   };
 
+  const getFingerJointWeightsForLevel = useCallback((level) => {
+    if (level <= 0) {
+      return {
+        finger: [0, 0, 0],
+        thumb: [0, 0],
+      };
+    }
+
+    if (level === 1) {
+      return {
+        finger: [0.6, 0.1, 0],
+        thumb: [0.5, 0.25],
+      };
+    }
+
+    if (level === 2) {
+      return {
+        finger: [0.85, 0.65, 0.2],
+        thumb: [0.8, 0.65],
+      };
+    }
+
+    return {
+      finger: [1, 0.9, 0.75],
+      thumb: [1, 1],
+    };
+  }, []);
+
+  const getFingerJointMapByLevels = useCallback((hand, levels) => {
+    const sideSign = hand === 'left' ? -1 : 1;
+    const thumbSpreadSign = hand === 'left' ? 1 : -1;
+    const normalizedLevels = {
+      ...OPEN_FINGER_LEVELS,
+      ...(levels || {}),
+    };
+
+    const curlAmount = Math.PI / 3;
+    const thumbBendAmount = Math.PI / 6;
+    const thumbSpreadAmount = Math.PI / 6;
+
+    const fingerJoints = (fingerName, level) => {
+      const boundedLevel = Math.round(clampToRange(Number(level) || 0, 0, 3));
+      const weights = getFingerJointWeightsForLevel(boundedLevel);
+
+      return [
+        [`${fingerName}1`, 'z', sideSign * curlAmount * weights.finger[0]],
+        [`${fingerName}2`, 'z', sideSign * curlAmount * weights.finger[1]],
+        [`${fingerName}3`, 'z', sideSign * curlAmount * weights.finger[2]],
+      ];
+    };
+
+    const thumbLevel = Math.round(clampToRange(Number(normalizedLevels.thumb) || 0, 0, 3));
+    const thumbWeights = getFingerJointWeightsForLevel(thumbLevel);
+
+    return {
+      thumb: [
+        ['thumb1', 'x', thumbBendAmount * thumbWeights.thumb[0]],
+        ['thumb2', 'y', thumbSpreadSign * thumbSpreadAmount * thumbWeights.thumb[1]],
+      ],
+      index: fingerJoints('index', normalizedLevels.index),
+      middle: fingerJoints('middle', normalizedLevels.middle),
+      ring: fingerJoints('ring', normalizedLevels.ring),
+      pinky: fingerJoints('pinky', normalizedLevels.pinky),
+    };
+  }, [getFingerJointWeightsForLevel]);
+
+  const angleAtJoint = (a, b, c) => {
+    const abx = a.x - b.x;
+    const aby = a.y - b.y;
+    const abz = a.z - b.z;
+    const cbx = c.x - b.x;
+    const cby = c.y - b.y;
+    const cbz = c.z - b.z;
+
+    const dot = abx * cbx + aby * cby + abz * cbz;
+    const magAB = Math.sqrt(abx * abx + aby * aby + abz * abz);
+    const magCB = Math.sqrt(cbx * cbx + cby * cby + cbz * cbz);
+
+    if (magAB === 0 || magCB === 0) {
+      return Math.PI;
+    }
+
+    const cosTheta = Math.max(-1, Math.min(1, dot / (magAB * magCB)));
+    return Math.acos(cosTheta);
+  };
+
+  const readBoneRotation = (bone) => {
+    if (!bone) {
+      return null;
+    }
+
+    return {
+      x: bone.rotation.x,
+      y: bone.rotation.y,
+      z: bone.rotation.z,
+    };
+  };
+
+  const applyBoneRotation = (bone, targetRotation) => {
+    if (!bone || !targetRotation) {
+      return;
+    }
+
+    bone.rotation.x = clampRotation(targetRotation.x);
+    bone.rotation.y = clampRotation(targetRotation.y);
+    bone.rotation.z = clampRotation(targetRotation.z);
+  };
+
+  const captureHandPoseSnapshot = useCallback((hand) => {
+    const rig = getArmRig(hand);
+    const fingerRig = getFingerRig(hand);
+
+    const fingers = {};
+    for (const [jointName, jointBone] of Object.entries(fingerRig)) {
+      const jointRotation = readBoneRotation(jointBone);
+      if (jointRotation) {
+        fingers[jointName] = jointRotation;
+      }
+    }
+
+    return {
+      arm: readBoneRotation(rig.arm),
+      forearm: readBoneRotation(rig.forearm),
+      hand: readBoneRotation(rig.hand),
+      fingers,
+    };
+  }, [getArmRig, getFingerRig]);
+
+  const applyHandPoseSnapshot = useCallback((hand, handSnapshot) => {
+    if (!handSnapshot) {
+      return;
+    }
+
+    const rig = getArmRig(hand);
+    const fingerRig = getFingerRig(hand);
+
+    applyBoneRotation(rig.arm, handSnapshot.arm);
+    applyBoneRotation(rig.forearm, handSnapshot.forearm);
+    applyBoneRotation(rig.hand, handSnapshot.hand);
+
+    for (const [jointName, jointRotation] of Object.entries(handSnapshot.fingers || {})) {
+      const jointBone = fingerRig[jointName];
+      applyBoneRotation(jointBone, jointRotation);
+    }
+  }, [getArmRig, getFingerRig]);
+
+  const applyFullPoseSnapshot = useCallback((snapshot) => {
+    if (!snapshot) {
+      return;
+    }
+
+    applyHandPoseSnapshot('left', snapshot.leftHand);
+    applyHandPoseSnapshot('right', snapshot.rightHand);
+  }, [applyHandPoseSnapshot]);
+
+  const interpolateRotation = useCallback((fromRotation, toRotation, t) => {
+    if (!fromRotation && !toRotation) {
+      return null;
+    }
+
+    if (!fromRotation) {
+      return toRotation;
+    }
+
+    if (!toRotation) {
+      return fromRotation;
+    }
+
+    return {
+      x: lerpAngle(fromRotation.x, toRotation.x, t),
+      y: lerpAngle(fromRotation.y, toRotation.y, t),
+      z: lerpAngle(fromRotation.z, toRotation.z, t),
+    };
+  }, []);
+
+  const interpolateHandSnapshot = useCallback((fromHand, toHand, t) => {
+    const fromFingers = fromHand?.fingers || {};
+    const toFingers = toHand?.fingers || {};
+    const fingerNames = new Set([...Object.keys(fromFingers), ...Object.keys(toFingers)]);
+
+    const fingers = {};
+    for (const fingerName of fingerNames) {
+      const interpolatedFinger = interpolateRotation(fromFingers[fingerName], toFingers[fingerName], t);
+      if (interpolatedFinger) {
+        fingers[fingerName] = interpolatedFinger;
+      }
+    }
+
+    return {
+      arm: interpolateRotation(fromHand?.arm, toHand?.arm, t),
+      forearm: interpolateRotation(fromHand?.forearm, toHand?.forearm, t),
+      hand: interpolateRotation(fromHand?.hand, toHand?.hand, t),
+      fingers,
+    };
+  }, [interpolateRotation]);
+
+  const interpolatePoseSnapshot = useCallback((fromPose, toPose, t) => {
+    return {
+      leftHand: interpolateHandSnapshot(fromPose?.leftHand, toPose?.leftHand, t),
+      rightHand: interpolateHandSnapshot(fromPose?.rightHand, toPose?.rightHand, t),
+    };
+  }, [interpolateHandSnapshot]);
+
+  const stopPosePlayback = useCallback((message = 'Pose playback stopped.') => {
+    if (ref.posePlaybackFrameId) {
+      cancelAnimationFrame(ref.posePlaybackFrameId);
+      ref.posePlaybackFrameId = null;
+    }
+
+    setIsPosePlaybackActive(false);
+    setStatusMessage(message);
+  }, [ref]);
+
+  const markCurrentPose = useCallback(() => {
+    if (!ref.avatar) {
+      setStatusMessage('Avatar not loaded yet. Please wait and try again.');
+      return;
+    }
+
+    const leftSnapshot = captureHandPoseSnapshot('left');
+    const rightSnapshot = captureHandPoseSnapshot('right');
+
+    if (!leftSnapshot.hand && !rightSnapshot.hand) {
+      setStatusMessage('Unable to detect hand rig for pose marking.');
+      return;
+    }
+
+    const nextIndex = markedPoses.length + 1;
+    const normalizedPoseName = (poseName || '').trim() || `Pose ${nextIndex}`;
+
+    const poseEntry = {
+      id: `${Date.now()}-${nextIndex}`,
+      name: normalizedPoseName,
+      capturedAt: new Date().toISOString(),
+      snapshot: {
+        leftHand: leftSnapshot,
+        rightHand: rightSnapshot,
+      },
+    };
+
+    setMarkedPoses((prev) => [...prev, poseEntry]);
+    setPoseName(`Pose ${nextIndex + 1}`);
+    setStatusMessage(`Marked ${normalizedPoseName}.`);
+  }, [captureHandPoseSnapshot, markedPoses.length, poseName, ref.avatar]);
+
+  const playMarkedPoses = useCallback(() => {
+    if (markedPoses.length === 0) {
+      setStatusMessage('Mark at least one pose before playback.');
+      return;
+    }
+
+    if (markedPoses.length === 1) {
+      applyFullPoseSnapshot(markedPoses[0].snapshot);
+      setStatusMessage(`Applied ${markedPoses[0].name}. Add more poses to animate.`);
+      return;
+    }
+
+    if (ref.posePlaybackFrameId) {
+      cancelAnimationFrame(ref.posePlaybackFrameId);
+      ref.posePlaybackFrameId = null;
+    }
+
+    setIsPosePlaybackActive(true);
+    setStatusMessage(`${isPoseLoopEnabled ? 'Looping' : 'Playing'} ${markedPoses.length} marked poses...`);
+
+    const transitionDurationMs = 700;
+    let segmentIndex = 0;
+    let segmentStartTime = performance.now();
+
+    const animateSegment = (now) => {
+      const fromPose = markedPoses[segmentIndex]?.snapshot;
+      const toPose = markedPoses[segmentIndex + 1]?.snapshot;
+
+      if (!fromPose || !toPose) {
+        stopPosePlayback('Marked pose playback completed.');
+        return;
+      }
+
+      const rawT = clampToRange((now - segmentStartTime) / transitionDurationMs, 0, 1);
+      const smoothT = rawT * rawT * (3 - 2 * rawT);
+      const interpolatedPose = interpolatePoseSnapshot(fromPose, toPose, smoothT);
+      applyFullPoseSnapshot(interpolatedPose);
+
+      if (rawT < 1) {
+        ref.posePlaybackFrameId = requestAnimationFrame(animateSegment);
+        return;
+      }
+
+      segmentIndex += 1;
+      segmentStartTime = now;
+
+      if (segmentIndex >= markedPoses.length - 1) {
+        applyFullPoseSnapshot(markedPoses[markedPoses.length - 1].snapshot);
+
+        if (isPoseLoopEnabled) {
+          segmentIndex = 0;
+          segmentStartTime = now;
+          ref.posePlaybackFrameId = requestAnimationFrame(animateSegment);
+          return;
+        }
+
+        stopPosePlayback('Marked pose playback completed.');
+        return;
+      }
+
+      ref.posePlaybackFrameId = requestAnimationFrame(animateSegment);
+    };
+
+    ref.posePlaybackFrameId = requestAnimationFrame(animateSegment);
+  }, [applyFullPoseSnapshot, interpolatePoseSnapshot, isPoseLoopEnabled, markedPoses, ref, stopPosePlayback]);
+
+  const applyMarkedPoseByIndex = useCallback((index) => {
+    const targetPose = markedPoses[index];
+    if (!targetPose) {
+      return;
+    }
+
+    applyFullPoseSnapshot(targetPose.snapshot);
+    setStatusMessage(`Applied ${targetPose.name}.`);
+  }, [applyFullPoseSnapshot, markedPoses]);
+
+  const clearMarkedPoses = useCallback(() => {
+    stopPosePlayback('Cleared all marked poses.');
+    setMarkedPoses([]);
+    setPoseName('Pose 1');
+  }, [stopPosePlayback]);
+
+  const applyCameraFingerPose = useCallback((hand, landmarks) => {
+    const fingerRig = getFingerRig(hand);
+    if (!fingerRig || !landmarks) {
+      return;
+    }
+
+    const angleToCurl = (angleRadians) => {
+      // Around 165deg is open, around 75deg is strongly closed.
+      const openAngle = 2.88;
+      const closedAngle = 1.31;
+      return Math.max(0, Math.min(1, (openAngle - angleRadians) / (openAngle - closedAngle)));
+    };
+
+    const sideSign = hand === 'left' ? -1 : 1;
+    const thumbSpreadSign = hand === 'left' ? 1 : -1;
+    const blend = 0.2;
+
+    const thumbCurl = angleToCurl(angleAtJoint(landmarks[1], landmarks[2], landmarks[4]));
+    const indexCurl = angleToCurl(angleAtJoint(landmarks[5], landmarks[6], landmarks[8]));
+    const middleCurl = angleToCurl(angleAtJoint(landmarks[9], landmarks[10], landmarks[12]));
+    const ringCurl = angleToCurl(angleAtJoint(landmarks[13], landmarks[14], landmarks[16]));
+    const pinkyCurl = angleToCurl(angleAtJoint(landmarks[17], landmarks[18], landmarks[20]));
+
+    const setJoint = (jointName, axis, target) => {
+      const joint = fingerRig[jointName];
+      if (!joint) {
+        return;
+      }
+      joint.rotation[axis] = clampRotation(joint.rotation[axis] * (1 - blend) + target * blend);
+    };
+
+    const fingerCurlToZ = (curl, weight = 1) => sideSign * (Math.PI / 2.9) * curl * weight;
+
+    setJoint('index1', 'z', fingerCurlToZ(indexCurl, 0.7));
+    setJoint('index2', 'z', fingerCurlToZ(indexCurl, 1.0));
+    setJoint('index3', 'z', fingerCurlToZ(indexCurl, 1.15));
+
+    setJoint('middle1', 'z', fingerCurlToZ(middleCurl, 0.7));
+    setJoint('middle2', 'z', fingerCurlToZ(middleCurl, 1.0));
+    setJoint('middle3', 'z', fingerCurlToZ(middleCurl, 1.15));
+
+    setJoint('ring1', 'z', fingerCurlToZ(ringCurl, 0.7));
+    setJoint('ring2', 'z', fingerCurlToZ(ringCurl, 1.0));
+    setJoint('ring3', 'z', fingerCurlToZ(ringCurl, 1.15));
+
+    setJoint('pinky1', 'z', fingerCurlToZ(pinkyCurl, 0.7));
+    setJoint('pinky2', 'z', fingerCurlToZ(pinkyCurl, 1.0));
+    setJoint('pinky3', 'z', fingerCurlToZ(pinkyCurl, 1.15));
+
+    setJoint('thumb1', 'x', (Math.PI / 9) + (Math.PI / 2.8) * thumbCurl);
+    setJoint('thumb2', 'y', thumbSpreadSign * (Math.PI / 4.8) * thumbCurl);
+  }, [getFingerRig]);
+
   const captureCurrentData = () => {
     const leftHand = getHandBone('left');
     const rightHand = getHandBone('right');
@@ -217,6 +647,56 @@ function Simulate() {
 
     URL.revokeObjectURL(url);
     setStatusMessage(`Saved ${capturedFrames.length} frames to JSON for word "${normalizedWord}".`);
+  };
+
+  const saveMoveListAsJson = () => {
+    if (markedPoses.length === 0) {
+      setStatusMessage('Mark at least one pose before saving move list JSON.');
+      return;
+    }
+
+    const normalizedWord = (wordName || 'NEW_WORD').trim().toUpperCase();
+    const normalizedMoveName = normalizedWord.toLowerCase();
+
+    const payload = {
+      move: normalizedWord,
+      avatar: bot === xbot ? 'xbot' : 'ybot',
+      totalPoses: markedPoses.length,
+      loopPlaybackDefault: isPoseLoopEnabled,
+      fingerCloseLevels,
+      createdAt: new Date().toISOString(),
+      poses: markedPoses.map((pose, index) => ({
+        step: index + 1,
+        id: pose.id,
+        name: pose.name,
+        capturedAt: pose.capturedAt,
+        snapshot: pose.snapshot,
+      })),
+    };
+
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${normalizedMoveName}_movelist.json`;
+    anchor.click();
+
+    URL.revokeObjectURL(url);
+
+    try {
+      const existingRaw = localStorage.getItem(MOVELIST_STORAGE_KEY);
+      const existingMap = existingRaw ? JSON.parse(existingRaw) : {};
+
+      existingMap[normalizedWord] = payload;
+      localStorage.setItem(MOVELIST_STORAGE_KEY, JSON.stringify(existingMap));
+
+      setStatusMessage(`Saved move list JSON with ${markedPoses.length} poses for "${normalizedWord}" and registered it for Convert.`);
+    } catch (error) {
+      console.error('Unable to persist move list in localStorage:', error);
+      setStatusMessage(`Saved move list JSON with ${markedPoses.length} poses for "${normalizedWord}" (browser save unavailable).`);
+    }
   };
 
   const applyKeyboardControl = useCallback((event) => {
@@ -468,6 +948,29 @@ function Simulate() {
         ref.fingerMotionFrameId = null;
       }
 
+      if (ref.cameraPoseFrameId) {
+        cancelAnimationFrame(ref.cameraPoseFrameId);
+        ref.cameraPoseFrameId = null;
+      }
+
+      if (ref.posePlaybackFrameId) {
+        cancelAnimationFrame(ref.posePlaybackFrameId);
+        ref.posePlaybackFrameId = null;
+      }
+
+      if (ref.cameraStream) {
+        const tracks = ref.cameraStream.getTracks();
+        for (const track of tracks) {
+          track.stop();
+        }
+        ref.cameraStream = null;
+      }
+
+      if (ref.handLandmarker) {
+        ref.handLandmarker.close();
+        ref.handLandmarker = null;
+      }
+
       if (ref.renderer) {
         ref.renderer.dispose();
       }
@@ -506,33 +1009,15 @@ function Simulate() {
 
   const setFingerPose = useCallback((pose, target = 'selected') => {
     const hands = target === 'both' ? ['left', 'right'] : [selectedHandRef.current];
-    const curlAmount = pose === 'close' ? Math.PI / 3 : 0;
-    const thumbBend = pose === 'close' ? Math.PI / 6 : 0;
+    const poseLevels = pose === 'close'
+      ? fingerCloseLevels
+      : OPEN_FINGER_LEVELS;
 
     let totalUpdated = 0;
     for (const hand of hands) {
       const fingerRig = getFingerRig(hand);
-      const sideSign = hand === 'left' ? -1 : 1;
-      const thumbSpread = pose === 'close'
-        ? (hand === 'left' ? Math.PI / 6 : -Math.PI / 6)
-        : 0;
-
-      const fingerRotations = [
-        ['index1', 'z', sideSign * curlAmount],
-        ['index2', 'z', sideSign * curlAmount],
-        ['index3', 'z', sideSign * curlAmount],
-        ['middle1', 'z', sideSign * curlAmount],
-        ['middle2', 'z', sideSign * curlAmount],
-        ['middle3', 'z', sideSign * curlAmount],
-        ['ring1', 'z', sideSign * curlAmount],
-        ['ring2', 'z', sideSign * curlAmount],
-        ['ring3', 'z', sideSign * curlAmount],
-        ['pinky1', 'z', sideSign * curlAmount],
-        ['pinky2', 'z', sideSign * curlAmount],
-        ['pinky3', 'z', sideSign * curlAmount],
-        ['thumb1', 'x', thumbBend],
-        ['thumb2', 'y', thumbSpread],
-      ];
+      const fingerJointMap = getFingerJointMapByLevels(hand, poseLevels);
+      const fingerRotations = Object.values(fingerJointMap).flat();
 
       for (const [joint, axis, value] of fingerRotations) {
         const bone = fingerRig[joint];
@@ -551,32 +1036,30 @@ function Simulate() {
     }
 
     if (target === 'both') {
-      setStatusMessage(`Both hands fingers ${pose === 'close' ? 'closed' : 'opened'}.`);
+      if (pose === 'close') {
+        setStatusMessage('Both hands fingers closed using per-finger levels.');
+      } else {
+        setStatusMessage('Both hands fingers opened.');
+      }
       return;
     }
 
     const hand = selectedHandRef.current;
-    setStatusMessage(`${hand === 'left' ? 'Left' : 'Right'} hand fingers ${pose === 'close' ? 'closed' : 'opened'}.`);
-  }, [getFingerRig]);
+    if (pose === 'close') {
+      setStatusMessage(`${hand === 'left' ? 'Left' : 'Right'} hand fingers closed using per-finger levels.`);
+    } else {
+      setStatusMessage(`${hand === 'left' ? 'Left' : 'Right'} hand fingers opened.`);
+    }
+  }, [fingerCloseLevels, getFingerJointMapByLevels, getFingerRig]);
 
   const setSingleFingerPose = useCallback((finger, pose) => {
     const hand = selectedHandRef.current;
     const fingerRig = getFingerRig(hand);
-    const sideSign = hand === 'left' ? -1 : 1;
+    const poseLevels = pose === 'close'
+      ? fingerCloseLevels
+      : OPEN_FINGER_LEVELS;
 
-    const curlAmount = pose === 'close' ? Math.PI / 3 : 0;
-    const thumbBend = pose === 'close' ? Math.PI / 6 : 0;
-    const thumbSpread = pose === 'close'
-      ? (hand === 'left' ? Math.PI / 6 : -Math.PI / 6)
-      : 0;
-
-    const fingerJointMap = {
-      thumb: [['thumb1', 'x', thumbBend], ['thumb2', 'y', thumbSpread]],
-      index: [['index1', 'z', sideSign * curlAmount], ['index2', 'z', sideSign * curlAmount], ['index3', 'z', sideSign * curlAmount]],
-      middle: [['middle1', 'z', sideSign * curlAmount], ['middle2', 'z', sideSign * curlAmount], ['middle3', 'z', sideSign * curlAmount]],
-      ring: [['ring1', 'z', sideSign * curlAmount], ['ring2', 'z', sideSign * curlAmount], ['ring3', 'z', sideSign * curlAmount]],
-      pinky: [['pinky1', 'z', sideSign * curlAmount], ['pinky2', 'z', sideSign * curlAmount], ['pinky3', 'z', sideSign * curlAmount]],
-    };
+    const fingerJointMap = getFingerJointMapByLevels(hand, poseLevels);
 
     const joints = fingerJointMap[finger];
     if (!joints) {
@@ -601,8 +1084,13 @@ function Simulate() {
 
     const handLabel = hand === 'left' ? 'Left' : 'Right';
     const fingerLabel = finger.charAt(0).toUpperCase() + finger.slice(1);
-    setStatusMessage(`${handLabel} ${fingerLabel} finger ${pose === 'close' ? 'closed' : 'opened'}.`);
-  }, [getFingerRig]);
+    if (pose === 'close') {
+      const boundedLevel = Math.round(clampToRange(Number(fingerCloseLevels[finger]) || 0, 0, 3));
+      setStatusMessage(`${handLabel} ${fingerLabel} finger closed (Level ${boundedLevel}).`);
+    } else {
+      setStatusMessage(`${handLabel} ${fingerLabel} finger opened.`);
+    }
+  }, [fingerCloseLevels, getFingerJointMapByLevels, getFingerRig]);
 
   const stopCircularFingerMotion = useCallback(() => {
     if (ref.fingerMotionFrameId) {
@@ -611,6 +1099,153 @@ function Simulate() {
       setStatusMessage('Circular finger motion stopped.');
     }
   }, [ref]);
+
+  const stopCameraPoseDetection = useCallback(() => {
+    if (ref.cameraPoseFrameId) {
+      cancelAnimationFrame(ref.cameraPoseFrameId);
+      ref.cameraPoseFrameId = null;
+    }
+
+    if (ref.cameraStream) {
+      const tracks = ref.cameraStream.getTracks();
+      for (const track of tracks) {
+        track.stop();
+      }
+      ref.cameraStream = null;
+    }
+
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null;
+    }
+
+    if (ref.handLandmarker) {
+      ref.handLandmarker.close();
+      ref.handLandmarker = null;
+    }
+
+    setCameraPoseEnabled(false);
+    setStatusMessage('Camera pose detection stopped.');
+  }, [ref]);
+
+  const startCameraPoseDetection = useCallback(async () => {
+    try {
+      if (!cameraVideoRef.current) {
+        setStatusMessage('Camera preview element is not ready yet.');
+        return;
+      }
+
+      if (ref.cameraPoseFrameId) {
+        cancelAnimationFrame(ref.cameraPoseFrameId);
+        ref.cameraPoseFrameId = null;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user',
+        },
+      });
+
+      cameraVideoRef.current.srcObject = stream;
+      await cameraVideoRef.current.play();
+      ref.cameraStream = stream;
+
+      const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision');
+      const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+
+      ref.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        },
+        runningMode: 'VIDEO',
+        numHands: 1,
+      });
+
+      setCameraPoseEnabled(true);
+      setStatusMessage('Camera pose detection enabled. Move your palm to drive wrist rotation.');
+
+      const detectAndApply = () => {
+        if (!ref.handLandmarker || !cameraVideoRef.current || !ref.avatar) {
+          ref.cameraPoseFrameId = requestAnimationFrame(detectAndApply);
+          return;
+        }
+
+        const result = ref.handLandmarker.detectForVideo(cameraVideoRef.current, performance.now());
+        const landmarks = result?.landmarks?.[0];
+
+        if (landmarks) {
+          const wrist = landmarks[0];
+          const indexMcp = landmarks[5];
+          const middleMcp = landmarks[9];
+          const pinkyMcp = landmarks[17];
+          const handednessLabel = result?.handednesses?.[0]?.[0]?.categoryName?.toLowerCase();
+
+          let hand = selectedHandRef.current;
+          if (cameraHandMapping === 'detected' && handednessLabel) {
+            hand = handednessLabel === 'left' ? 'left' : 'right';
+          } else if (cameraHandMapping === 'mirror' && handednessLabel) {
+            hand = handednessLabel === 'left' ? 'right' : 'left';
+          } else if (cameraHandMapping === 'left') {
+            hand = 'left';
+          } else if (cameraHandMapping === 'right') {
+            hand = 'right';
+          }
+
+          const sideSign = hand === 'left' ? -1 : 1;
+          const rig = getArmRig(hand);
+
+          const blendAxis = (bone, axis, target, blend, minLimit, maxLimit) => {
+            if (!bone) {
+              return;
+            }
+
+            const limitedTarget = clampToRange(target, minLimit, maxLimit);
+            bone.rotation[axis] = clampRotation(bone.rotation[axis] * (1 - blend) + limitedTarget * blend);
+          };
+
+          const palmCenterX = (indexMcp.x + middleMcp.x + pinkyMcp.x) / 3;
+          const palmCenterY = (indexMcp.y + middleMcp.y + pinkyMcp.y) / 3;
+
+          const handPitch = (wrist.y - palmCenterY) * 3.4;
+          const handYaw = (palmCenterX - wrist.x) * 3.0 * sideSign;
+          const palmRoll = Math.atan2(indexMcp.y - pinkyMcp.y, indexMcp.x - pinkyMcp.x) * sideSign;
+
+          const forearmPitch = handPitch * 0.62;
+          const forearmYaw = handYaw * 0.58;
+          const forearmRoll = palmRoll * 0.5;
+
+          const shoulderLift = (0.62 - wrist.y) * 1.9;
+          const shoulderSwing = (wrist.x - 0.5) * 1.8 * sideSign;
+          const shoulderTwist = palmRoll * 0.25;
+
+          blendAxis(rig.hand, 'x', handPitch, 0.2, -1.25, 1.25);
+          blendAxis(rig.hand, 'y', handYaw, 0.2, -1.1, 1.1);
+          blendAxis(rig.hand, 'z', palmRoll, 0.22, -1.35, 1.35);
+
+          blendAxis(rig.forearm, 'x', forearmPitch, 0.16, -1.05, 1.05);
+          blendAxis(rig.forearm, 'y', forearmYaw, 0.16, -1.05, 1.05);
+          blendAxis(rig.forearm, 'z', forearmRoll, 0.16, -1.1, 1.1);
+
+          blendAxis(rig.arm, 'x', -shoulderLift, 0.14, -1.05, 0.95);
+          blendAxis(rig.arm, 'y', shoulderSwing, 0.1, -1.0, 1.0);
+          blendAxis(rig.arm, 'z', shoulderTwist, 0.1, -0.7, 0.7);
+
+          if (cameraFingerMappingEnabled) {
+            applyCameraFingerPose(hand, landmarks);
+          }
+        }
+
+        ref.cameraPoseFrameId = requestAnimationFrame(detectAndApply);
+      };
+
+      ref.cameraPoseFrameId = requestAnimationFrame(detectAndApply);
+    } catch (error) {
+      console.error(error);
+      stopCameraPoseDetection();
+      setStatusMessage('Unable to start camera pose detection. Allow camera permission and try again.');
+    }
+  }, [applyCameraFingerPose, cameraFingerMappingEnabled, cameraHandMapping, getArmRig, ref, stopCameraPoseDetection]);
 
   const runCircularFingerMotion = useCallback(() => {
     if (stationaryFinger === movingFinger) {
@@ -744,6 +1379,61 @@ function Simulate() {
             placeholder='Example: ABBREVIATION'
           />
 
+          <label className='label-style mt-3'>Pose Name</label>
+          <input
+            className='w-100 input-style simulator-input'
+            value={poseName}
+            onChange={(event) => setPoseName(event.target.value)}
+            placeholder='Example: Pose 1'
+          />
+          <div className='space-between'>
+            <button className='btn btn-brown btn-style simulator-zoom-btn' onClick={markCurrentPose}>
+              Mark Pose
+            </button>
+            <button className='btn btn-outline-dark btn-style simulator-zoom-btn' onClick={playMarkedPoses}>
+              Play Poses
+            </button>
+          </div>
+          <div className='space-between'>
+            <button className='btn btn-outline-danger btn-style simulator-zoom-btn' onClick={() => stopPosePlayback('Pose playback stopped manually.')}>
+              Stop Pose Play
+            </button>
+            <button className='btn btn-outline-secondary btn-style simulator-zoom-btn' onClick={clearMarkedPoses}>
+              Clear Poses
+            </button>
+          </div>
+          <button className='btn btn-success w-100 btn-style' onClick={saveMoveListAsJson}>
+            Save Move List JSON
+          </button>
+          <div className='simulator-status'>Marked Poses: {markedPoses.length}</div>
+          <div className='simulator-status'>Pose Playback: {isPosePlaybackActive ? 'Playing' : 'Idle'}</div>
+          <div className='form-check mt-2'>
+            <input
+              id='pose-loop-playback'
+              type='checkbox'
+              className='form-check-input'
+              checked={isPoseLoopEnabled}
+              onChange={(event) => setIsPoseLoopEnabled(event.target.checked)}
+            />
+            <label className='form-check-label normal-text' htmlFor='pose-loop-playback'>
+              Loop Pose Playback (until Stop Pose Play)
+            </label>
+          </div>
+          {markedPoses.length > 0 && (
+            <div className='simulator-keymap mt-2'>
+              <p className='simulator-keymap-title'>Marked Pose List</p>
+              {markedPoses.map((pose, index) => (
+                <button
+                  key={pose.id}
+                  className='btn btn-outline-dark btn-style w-100 mt-1'
+                  onClick={() => applyMarkedPoseByIndex(index)}
+                >
+                  {index + 1}. {pose.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <label className='label-style'>Selected Hand</label>
           <div className='space-between'>
             <button
@@ -792,7 +1482,69 @@ function Simulate() {
             </button>
           </div>
 
+          <label className='label-style'>Camera Pose Detection</label>
+          <div className='space-between'>
+            <button className='btn btn-brown btn-style simulator-zoom-btn' onClick={startCameraPoseDetection}>
+              Start Camera Pose
+            </button>
+            <button className='btn btn-outline-danger btn-style simulator-zoom-btn' onClick={stopCameraPoseDetection}>
+              Stop Camera Pose
+            </button>
+          </div>
+          <label className='normal-text mt-2'>Camera Hand Mapping</label>
+          <select
+            className='w-100 input-style simulator-input mt-2'
+            value={cameraHandMapping}
+            onChange={(event) => setCameraHandMapping(event.target.value)}
+          >
+            <option value='selected'>Use Selected Hand</option>
+            <option value='detected'>Use Detected Handedness</option>
+            <option value='mirror'>Mirror Detected Handedness</option>
+            <option value='left'>Force Left Avatar Hand</option>
+            <option value='right'>Force Right Avatar Hand</option>
+          </select>
+          <div className='form-check mt-2'>
+            <input
+              id='camera-finger-mapping'
+              type='checkbox'
+              className='form-check-input'
+              checked={cameraFingerMappingEnabled}
+              onChange={(event) => setCameraFingerMappingEnabled(event.target.checked)}
+            />
+            <label className='form-check-label normal-text' htmlFor='camera-finger-mapping'>
+              Enable Finger Pose Mapping (Open/Close)
+            </label>
+          </div>
+          <div className='simulator-status'>Camera Pose: {cameraPoseEnabled ? 'On' : 'Off'}</div>
+
           <label className='label-style'>Finger Controls (Selected Hand)</label>
+          <label className='normal-text mt-2'>Per-Finger Close Levels (Joint-based)</label>
+          <div className='mt-2'>
+            {FINGER_NAMES.map((fingerName) => {
+              const label = fingerName.charAt(0).toUpperCase() + fingerName.slice(1);
+              return (
+                <div key={`close-level-${fingerName}`} className='space-between mt-1'>
+                  <span className='normal-text'>{label}</span>
+                  <select
+                    className='input-style simulator-input'
+                    style={{ width: '55%' }}
+                    value={fingerCloseLevels[fingerName]}
+                    onChange={(event) => {
+                      const level = Math.round(clampToRange(Number(event.target.value) || 0, 1, 3));
+                      setFingerCloseLevels((prev) => ({
+                        ...prev,
+                        [fingerName]: level,
+                      }));
+                    }}
+                  >
+                    <option value='1'>Level 1</option>
+                    <option value='2'>Level 2</option>
+                    <option value='3'>Level 3</option>
+                  </select>
+                </div>
+              );
+            })}
+          </div>
           <div className='space-between'>
             <button className='btn btn-outline-dark btn-style simulator-zoom-btn' onClick={() => setFingerPose('open')}>
               Open Fingers
@@ -911,6 +1663,14 @@ function Simulate() {
 
         <div className='col-md-7'>
           <div id='simulate-canvas' />
+          <video
+            ref={cameraVideoRef}
+            className='mt-3 w-100'
+            style={{ maxHeight: '480px', objectFit: 'cover', border: '2px solid #8B4513', borderRadius: '6px' }}
+            autoPlay
+            muted
+            playsInline
+          />
         </div>
 
         <div className='col-md-2'>
