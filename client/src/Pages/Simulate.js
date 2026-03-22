@@ -86,6 +86,8 @@ function Simulate() {
   const [isPoseLoopEnabled, setIsPoseLoopEnabled] = useState(false);
   const [capturedFrames, setCapturedFrames] = useState([]);
   const [statusMessage, setStatusMessage] = useState('Use keyboard/mouse to pose the avatar hands.');
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
+  const [photoFileName, setPhotoFileName] = useState('');
   const selectedHandRef = useRef('left');
   const moveStepRef = useRef(0.02);
   const rotationStepRef = useRef(0.05);
@@ -97,6 +99,7 @@ function Simulate() {
     fingerMotionFrameId: null,
     cameraPoseFrameId: null,
     posePlaybackFrameId: null,
+    photoPoseFrameId: null,
     cameraStream: null,
     handLandmarker: null,
   });
@@ -124,6 +127,30 @@ function Simulate() {
   useEffect(() => {
     rotationStepRef.current = rotationStep;
   }, [rotationStep]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) {
+        URL.revokeObjectURL(photoPreviewUrl);
+      }
+    };
+  }, [photoPreviewUrl]);
+
+  const handlePhotoUpload = useCallback((event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) {
+      return;
+    }
+
+    if (photoPreviewUrl) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+
+    const nextUrl = URL.createObjectURL(file);
+    setPhotoPreviewUrl(nextUrl);
+    setPhotoFileName(file.name);
+    setStatusMessage('Photo loaded. Click Detect Pose to apply the pose to the avatar.');
+  }, [photoPreviewUrl]);
 
   const getBone = useCallback((boneNameList) => {
     if (!ref.avatar) {
@@ -161,6 +188,219 @@ function Simulate() {
       hand: getBone(RIGHT_HAND_CANDIDATES),
     };
   }, [getBone]);
+
+  const getPhotoPoseTargets = useCallback((poseLandmarks) => {
+    if (!poseLandmarks || poseLandmarks.length < 17) {
+      return null;
+    }
+
+    const vec = (p) => ({ x: p.x, y: p.y, z: p.z });
+    const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+    const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+    const scale = (a, s) => ({ x: a.x * s, y: a.y * s, z: a.z * s });
+    const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+    const cross = (a, b) => ({
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x,
+    });
+    const len = (a) => Math.sqrt(dot(a, a));
+    const normalize = (a) => {
+      const length = len(a);
+      if (!length) {
+        return { x: 0, y: 0, z: 0 };
+      }
+      return scale(a, 1 / length);
+    };
+
+    const leftShoulder = poseLandmarks[11] ? vec(poseLandmarks[11]) : null;
+    const rightShoulder = poseLandmarks[12] ? vec(poseLandmarks[12]) : null;
+    if (!leftShoulder || !rightShoulder) {
+      return null;
+    }
+
+    const leftHip = poseLandmarks[23] ? vec(poseLandmarks[23]) : null;
+    const rightHip = poseLandmarks[24] ? vec(poseLandmarks[24]) : null;
+    const shoulderMid = scale(add(leftShoulder, rightShoulder), 0.5);
+    const hipMid = leftHip && rightHip
+      ? scale(add(leftHip, rightHip), 0.5)
+      : { x: shoulderMid.x, y: shoulderMid.y + 0.25, z: shoulderMid.z };
+
+    const torsoUp = normalize(sub(shoulderMid, hipMid));
+    const torsoRight = normalize(sub(rightShoulder, leftShoulder));
+    let torsoForward = normalize(cross(torsoRight, torsoUp));
+    if (len(torsoForward) === 0) {
+      torsoForward = { x: 0, y: 0, z: 1 };
+    }
+
+    const toTorsoFrame = (v) => ({
+      x: dot(v, torsoRight),
+      y: dot(v, torsoUp),
+      z: dot(v, torsoForward),
+    });
+
+    const getTargetsForSide = (side) => {
+      const source = side === 'left'
+        ? { shoulder: 11, elbow: 13, wrist: 15 }
+        : { shoulder: 12, elbow: 14, wrist: 16 };
+
+      const shoulder = poseLandmarks[source.shoulder];
+      const elbow = poseLandmarks[source.elbow];
+      const wrist = poseLandmarks[source.wrist];
+
+      if (!shoulder || !elbow || !wrist) {
+        return null;
+      }
+
+      const upperVec = normalize(sub(elbow, shoulder));
+      const foreVec = normalize(sub(wrist, elbow));
+
+      const upperLocal = toTorsoFrame(upperVec);
+      const foreLocal = toTorsoFrame(foreVec);
+
+      const elbowAngle = angleAtJoint(shoulder, elbow, wrist);
+      const elbowFlex = clampToRange((Math.PI - elbowAngle) / (Math.PI - 0.35), 0, 1);
+
+      const armYaw = clampToRange(Math.atan2(upperLocal.x, upperLocal.z) * 0.9, -1.2, 1.2);
+      const armPitch = clampToRange(Math.atan2(-upperLocal.y, Math.sqrt(upperLocal.x ** 2 + upperLocal.z ** 2)) * 1.05, -1.2, 1.2);
+      const armRoll = 0;
+
+      const forearmYaw = clampToRange(Math.atan2(foreLocal.x, foreLocal.z) * 0.9, -1.25, 1.25);
+      const forearmPitch = clampToRange(Math.atan2(-foreLocal.y, Math.sqrt(foreLocal.x ** 2 + foreLocal.z ** 2)) + (elbowFlex * 0.9), -1.35, 1.35);
+      const forearmRoll = 0;
+
+      return {
+        arm: { x: armPitch, y: armYaw, z: armRoll },
+        forearm: { x: forearmPitch, y: forearmYaw, z: forearmRoll },
+      };
+    };
+
+    return {
+      left: getTargetsForSide('left'),
+      right: getTargetsForSide('right'),
+    };
+  }, []);
+
+  const animatePhotoPose = useCallback((targets, durationMs = 700) => {
+    if (!targets) {
+      return;
+    }
+
+    const startTime = performance.now();
+    const leftRig = getArmRig('left');
+    const rightRig = getArmRig('right');
+
+    const startRotations = {
+      left: {
+        arm: leftRig.arm ? { x: leftRig.arm.rotation.x, y: leftRig.arm.rotation.y, z: leftRig.arm.rotation.z } : null,
+        forearm: leftRig.forearm ? { x: leftRig.forearm.rotation.x, y: leftRig.forearm.rotation.y, z: leftRig.forearm.rotation.z } : null,
+      },
+      right: {
+        arm: rightRig.arm ? { x: rightRig.arm.rotation.x, y: rightRig.arm.rotation.y, z: rightRig.arm.rotation.z } : null,
+        forearm: rightRig.forearm ? { x: rightRig.forearm.rotation.x, y: rightRig.forearm.rotation.y, z: rightRig.forearm.rotation.z } : null,
+      },
+    };
+
+    if (ref.photoPoseFrameId) {
+      cancelAnimationFrame(ref.photoPoseFrameId);
+      ref.photoPoseFrameId = null;
+    }
+
+    const lerpRotation = (from, to, t) => {
+      if (!from || !to) {
+        return null;
+      }
+
+      return {
+        x: lerpAngle(from.x, to.x, t),
+        y: lerpAngle(from.y, to.y, t),
+        z: lerpAngle(from.z, to.z, t),
+      };
+    };
+
+    const animate = (now) => {
+      const progress = Math.min((now - startTime) / durationMs, 1);
+
+      const leftTarget = targets.left;
+      if (leftTarget) {
+        const armRotation = lerpRotation(startRotations.left.arm, leftTarget.arm, progress);
+        const forearmRotation = lerpRotation(startRotations.left.forearm, leftTarget.forearm, progress);
+
+        if (leftRig.arm && armRotation) {
+          leftRig.arm.rotation.set(armRotation.x, armRotation.y, armRotation.z);
+        }
+        if (leftRig.forearm && forearmRotation) {
+          leftRig.forearm.rotation.set(forearmRotation.x, forearmRotation.y, forearmRotation.z);
+        }
+      }
+
+      const rightTarget = targets.right;
+      if (rightTarget) {
+        const armRotation = lerpRotation(startRotations.right.arm, rightTarget.arm, progress);
+        const forearmRotation = lerpRotation(startRotations.right.forearm, rightTarget.forearm, progress);
+
+        if (rightRig.arm && armRotation) {
+          rightRig.arm.rotation.set(armRotation.x, armRotation.y, armRotation.z);
+        }
+        if (rightRig.forearm && forearmRotation) {
+          rightRig.forearm.rotation.set(forearmRotation.x, forearmRotation.y, forearmRotation.z);
+        }
+      }
+
+      if (progress < 1) {
+        ref.photoPoseFrameId = requestAnimationFrame(animate);
+        return;
+      }
+
+      ref.photoPoseFrameId = null;
+    };
+
+    ref.photoPoseFrameId = requestAnimationFrame(animate);
+  }, [getArmRig, ref]);
+
+  const detectPoseFromPhoto = useCallback(async () => {
+    if (!photoPreviewUrl) {
+      setStatusMessage('Upload a photo first to detect a pose.');
+      return;
+    }
+
+    try {
+      setStatusMessage('Detecting pose from photo...');
+
+      const image = new Image();
+      image.src = photoPreviewUrl;
+      await new Promise((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = (error) => reject(error);
+      });
+
+      const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision');
+      const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+      const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+        },
+        runningMode: 'IMAGE',
+        numPoses: 1,
+      });
+
+      const result = poseLandmarker.detect(image);
+      poseLandmarker.close();
+
+      const poseLandmarks = result?.landmarks?.[0];
+      const targets = getPhotoPoseTargets(poseLandmarks);
+      if (!targets || (!targets.left && !targets.right)) {
+        setStatusMessage('No clear pose detected in the photo. Try a clearer upper-body image.');
+        return;
+      }
+
+      animatePhotoPose(targets, 750);
+      setStatusMessage('Photo pose applied. Avatar animated to match the image.');
+    } catch (error) {
+      console.error(error);
+      setStatusMessage('Unable to detect pose from the photo. Try another image.');
+    }
+  }, [animatePhotoPose, getPhotoPoseTargets, photoPreviewUrl]);
 
   const getFingerRig = useCallback((hand) => {
     const side = hand === 'left' ? 'Left' : 'Right';
@@ -958,6 +1198,11 @@ function Simulate() {
         ref.posePlaybackFrameId = null;
       }
 
+      if (ref.photoPoseFrameId) {
+        cancelAnimationFrame(ref.photoPoseFrameId);
+        ref.photoPoseFrameId = null;
+      }
+
       if (ref.cameraStream) {
         const tracks = ref.cameraStream.getTracks();
         for (const track of tracks) {
@@ -1710,6 +1955,32 @@ function Simulate() {
             muted
             playsInline
           />
+          <div className='sim-photo-panel'>
+            <p className='sim-photo-title'>Upload Photo (Pose Detection)</p>
+            <p className='sim-photo-subtitle'>Upload a clear upper-body photo to match the avatar pose.</p>
+            <input
+              type='file'
+              accept='image/*'
+              className='w-100 input-style simulator-input'
+              onChange={handlePhotoUpload}
+            />
+            {photoFileName && (
+              <p className='sim-photo-filename'>Selected: {photoFileName}</p>
+            )}
+            {photoPreviewUrl && (
+              <img
+                src={photoPreviewUrl}
+                alt='Uploaded pose reference'
+                className='sim-photo-preview'
+              />
+            )}
+            <button
+              className='btn btn-brown w-100 btn-style'
+              onClick={detectPoseFromPhoto}
+            >
+              Detect Pose
+            </button>
+          </div>
         </div>
 
         <div className='col-md-2'>
