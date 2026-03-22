@@ -1002,6 +1002,42 @@ function Simulate() {
     setStatusMessage('Pose reset. Joints remain connected and ready for mouse placement.');
   };
 
+  const setAttentionPose = useCallback(() => {
+    if (!ref.avatar) {
+      return;
+    }
+
+    const hands = ['left', 'right'];
+    for (const hand of hands) {
+      const rig = getArmRig(hand);
+      const sideSign = hand === 'left' ? -1 : 1;
+
+      if (rig.arm) {
+        rig.arm.rotation.set(0, 0, clampRotation(sideSign * (Math.PI / 2)));
+      }
+      if (rig.forearm) {
+        rig.forearm.rotation.set(0, 0, 0);
+      }
+      if (rig.hand) {
+        rig.hand.rotation.set(0, 0, 0);
+      }
+
+      const fingerRig = getFingerRig(hand);
+      const fingerJointMap = getFingerJointMapByLevels(hand, OPEN_FINGER_LEVELS);
+      const fingerRotations = Object.values(fingerJointMap).flat();
+
+      for (const [joint, axis, value] of fingerRotations) {
+        const bone = fingerRig[joint];
+        if (!bone) {
+          continue;
+        }
+        bone.rotation[axis] = clampRotation(value);
+      }
+    }
+
+    setStatusMessage('Attention pose applied. Both hands lowered and fingers opened.');
+  }, [getArmRig, getFingerJointMapByLevels, getFingerRig, ref]);
+
   const clearData = () => {
     setCapturedFrames([]);
     setStatusMessage('All captured frames cleared.');
@@ -1404,6 +1440,9 @@ function Simulate() {
           </div>
           <button className='btn btn-success w-100 btn-style' onClick={saveMoveListAsJson}>
             Save Move List JSON
+          </button>
+          <button className='btn btn-outline-dark w-100 btn-style' onClick={setAttentionPose}>
+            Attention Pose (Lower Hands)
           </button>
           <div className='simulator-status'>Marked Poses: {markedPoses.length}</div>
           <div className='simulator-status'>Pose Playback: {isPosePlaybackActive ? 'Playing' : 'Idle'}</div>
