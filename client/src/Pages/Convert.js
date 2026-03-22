@@ -19,6 +19,160 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
+const MOVELIST_STORAGE_KEY = 'signverse_custom_movelists';
+
+const AXES = ['x', 'y', 'z'];
+const EPSILON = 0.0005;
+
+const getArmBoneCandidates = (side) => ({
+  arm: [`mixamorig${side}Arm`, `${side}Arm`],
+  forearm: [`mixamorig${side}ForeArm`, `${side}ForeArm`],
+  hand: [`mixamorig${side}Hand`, `${side}Hand`],
+});
+
+const getFingerBoneCandidates = (side) => ({
+  thumb1: [`mixamorig${side}HandThumb1`, `${side}HandThumb1`],
+  thumb2: [`mixamorig${side}HandThumb2`, `${side}HandThumb2`],
+  index1: [`mixamorig${side}HandIndex1`, `${side}HandIndex1`],
+  index2: [`mixamorig${side}HandIndex2`, `${side}HandIndex2`],
+  index3: [`mixamorig${side}HandIndex3`, `${side}HandIndex3`],
+  middle1: [`mixamorig${side}HandMiddle1`, `${side}HandMiddle1`],
+  middle2: [`mixamorig${side}HandMiddle2`, `${side}HandMiddle2`],
+  middle3: [`mixamorig${side}HandMiddle3`, `${side}HandMiddle3`],
+  ring1: [`mixamorig${side}HandRing1`, `${side}HandRing1`],
+  ring2: [`mixamorig${side}HandRing2`, `${side}HandRing2`],
+  ring3: [`mixamorig${side}HandRing3`, `${side}HandRing3`],
+  pinky1: [`mixamorig${side}HandPinky1`, `${side}HandPinky1`],
+  pinky2: [`mixamorig${side}HandPinky2`, `${side}HandPinky2`],
+  pinky3: [`mixamorig${side}HandPinky3`, `${side}HandPinky3`],
+});
+
+const resolveBoneName = (avatar, candidates) => {
+  if (!avatar || !candidates) {
+    return null;
+  }
+
+  for (const candidate of candidates) {
+    if (avatar.getObjectByName(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const addRotationSteps = (animation, boneName, currentRotation, targetRotation) => {
+  if (!boneName || !targetRotation) {
+    return;
+  }
+
+  for (const axis of AXES) {
+    const currentValue = currentRotation?.[axis] ?? 0;
+    const targetValue = targetRotation?.[axis];
+    if (typeof targetValue !== 'number') {
+      continue;
+    }
+
+    const delta = targetValue - currentValue;
+    if (Math.abs(delta) <= EPSILON) {
+      continue;
+    }
+
+    animation.push([boneName, 'rotation', axis, targetValue, delta > 0 ? '+' : '-']);
+  }
+};
+
+const queuePoseSnapshotAnimation = (ref, snapshot) => {
+  if (!ref.avatar || !snapshot) {
+    return;
+  }
+
+  const animation = [];
+  const sideConfig = [
+    { key: 'leftHand', side: 'Left' },
+    { key: 'rightHand', side: 'Right' },
+  ];
+
+  for (const config of sideConfig) {
+    const handSnapshot = snapshot[config.key];
+    if (!handSnapshot) {
+      continue;
+    }
+
+    const armCandidates = getArmBoneCandidates(config.side);
+    const fingerCandidates = getFingerBoneCandidates(config.side);
+
+    const armBoneName = resolveBoneName(ref.avatar, armCandidates.arm);
+    const forearmBoneName = resolveBoneName(ref.avatar, armCandidates.forearm);
+    const handBoneName = resolveBoneName(ref.avatar, armCandidates.hand);
+
+    addRotationSteps(
+      animation,
+      armBoneName,
+      ref.avatar.getObjectByName(armBoneName)?.rotation,
+      handSnapshot.arm,
+    );
+    addRotationSteps(
+      animation,
+      forearmBoneName,
+      ref.avatar.getObjectByName(forearmBoneName)?.rotation,
+      handSnapshot.forearm,
+    );
+    addRotationSteps(
+      animation,
+      handBoneName,
+      ref.avatar.getObjectByName(handBoneName)?.rotation,
+      handSnapshot.hand,
+    );
+
+    for (const [jointName, targetRotation] of Object.entries(handSnapshot.fingers || {})) {
+      const fingerBoneName = resolveBoneName(ref.avatar, fingerCandidates[jointName]);
+      if (!fingerBoneName) {
+        continue;
+      }
+
+      addRotationSteps(
+        animation,
+        fingerBoneName,
+        ref.avatar.getObjectByName(fingerBoneName)?.rotation,
+        targetRotation,
+      );
+    }
+  }
+
+  if (animation.length > 0) {
+    ref.animations.push(animation);
+  }
+};
+
+const queueStoredMoveList = (ref, moveListPayload) => {
+  const poses = moveListPayload?.poses || [];
+  for (const pose of poses) {
+    queuePoseSnapshotAnimation(ref, pose.snapshot);
+  }
+};
+
+const readStoredMoveLists = () => {
+  try {
+    const raw = localStorage.getItem(MOVELIST_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    console.error('Unable to read stored move lists:', error);
+    return {};
+  }
+};
+
+const saveStoredMoveList = (moveName, payload) => {
+  const existing = readStoredMoveLists();
+  existing[moveName] = payload;
+  localStorage.setItem(MOVELIST_STORAGE_KEY, JSON.stringify(existing));
+};
+
 function Convert() {
   const [text, setText] = useState("");
   const [bot, setBot] = useState(ybot);
@@ -30,6 +184,9 @@ function Convert() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState("");
   const [translationError, setTranslationError] = useState("");
+  const [movelistFile, setMovelistFile] = useState(null);
+  const [movelistImportMessage, setMovelistImportMessage] = useState("");
+  const [movelistImportError, setMovelistImportError] = useState("");
 
   const componentRef = useRef({});
   const { current: ref } = componentRef;
@@ -106,7 +263,7 @@ function Convert() {
     if (ref.animations[0].length) {
       if (!ref.flag) {
         if (ref.animations[0][0] === 'add-text') {
-          setText(text + ref.animations[0][1]);
+          setText((prev) => prev + ref.animations[0][1]);
           setCurrentWordIndex(prev => prev + 1); // Move to next word
           ref.animations.shift();
         }
@@ -154,48 +311,69 @@ function Convert() {
     setIsTranslating(true);
 
     try {
-      // Always auto-detect and translate
-      const result = await detectAndTranslate(str);
+      const rawInput = str.trim();
+      const isPlainEnglishInput = /^[A-Za-z\s]+$/.test(rawInput);
+      let translatedStr = rawInput;
 
-      if (result.error) {
-        setTranslationError(`Translation failed: ${result.error}`);
-        setIsTranslating(false);
-        return;
-      }
+      if (!isPlainEnglishInput) {
+        const result = await detectAndTranslate(rawInput);
 
-      var translatedStr = result.translatedText;
+        if (!result.error && result.translatedText) {
+          translatedStr = result.translatedText;
 
-      // Show detected language info
-      if (result.detectedLang !== 'en') {
-        setDetectedLanguage(`Detected: ${result.detectedLangName} → English`);
+          if (result.detectedLang !== 'en') {
+            setDetectedLanguage(`Detected: ${result.detectedLangName} → English`);
+          } else {
+            setDetectedLanguage('Language: English');
+          }
+        } else {
+          // If translation is unavailable, continue with raw input instead of blocking animation.
+          setDetectedLanguage('Translation unavailable. Using original input text.');
+          setTranslationError('');
+        }
       } else {
-        setDetectedLanguage(`Language: English`);
+        setDetectedLanguage('Language: English');
       }
-
-      setIsTranslating(false);
 
       translatedStr = translatedStr.toUpperCase();
-      var strWords = translatedStr.split(' ');
+      var strWords = translatedStr.split(/\s+/).filter(Boolean);
       setText('');
 
       // Set full caption and prepare word array for highlighting
       setFullCaption(translatedStr);
       let wordArray = [];
+      const storedMoveLists = readStoredMoveLists();
 
-      // Fingerspell all translated English text character by character
       for (let word of strWords) {
-        // Process each character in the word
-        for (const [index, ch] of word.split('').entries()) {
-          // Check if character is A-Z (alphabets only has A-Z)
+        const normalizedWord = word.replace(/[^A-Z]/g, '');
+        if (!normalizedWord) {
+          continue;
+        }
+
+        if (storedMoveLists[normalizedWord]) {
+          wordArray.push(normalizedWord);
+          ref.animations.push(['add-text', normalizedWord + ' ']);
+          queueStoredMoveList(ref, storedMoveLists[normalizedWord]);
+          continue;
+        }
+
+        if (words.wordList.includes(normalizedWord) && typeof words[normalizedWord] === 'function') {
+          wordArray.push(normalizedWord);
+          ref.animations.push(['add-text', normalizedWord + ' ']);
+          words[normalizedWord](ref);
+          continue;
+        }
+
+        // Fallback to fingerspelling for words without movelist support.
+        for (const [index, ch] of normalizedWord.split('').entries()) {
           if (alphabets[ch] && typeof alphabets[ch] === 'function') {
             wordArray.push(ch);
-            if (index === word.length - 1)
-              ref.animations.push(['add-text', ch + ' ']); // Add space after word
+            if (index === normalizedWord.length - 1)
+              ref.animations.push(['add-text', ch + ' ']);
             else
               ref.animations.push(['add-text', ch]);
             alphabets[ch](ref);
           } else {
-            // Skip non-alphabetic characters (numbers, punctuation, special chars)
             console.log(`Skipping character '${ch}' - no animation available`);
           }
         }
@@ -218,7 +396,63 @@ function Convert() {
       }
     } catch (error) {
       console.error("Sign conversion error:", error);
-      setTranslationError(`Error: ${error.message}`);
+      const fallbackText = str.trim().toUpperCase();
+      if (!fallbackText) {
+        setTranslationError(`Error: ${error.message}`);
+        return;
+      }
+
+      // Final fallback path: keep animation functional with original input.
+      setDetectedLanguage('Translation unavailable. Using original input text.');
+      setTranslationError('');
+
+      const strWords = fallbackText.split(/\s+/).filter(Boolean);
+      setText('');
+      setFullCaption(fallbackText);
+
+      let wordArray = [];
+      const storedMoveLists = readStoredMoveLists();
+
+      for (let word of strWords) {
+        const normalizedWord = word.replace(/[^A-Z]/g, '');
+        if (!normalizedWord) {
+          continue;
+        }
+
+        if (storedMoveLists[normalizedWord]) {
+          wordArray.push(normalizedWord);
+          ref.animations.push(['add-text', normalizedWord + ' ']);
+          queueStoredMoveList(ref, storedMoveLists[normalizedWord]);
+          continue;
+        }
+
+        if (words.wordList.includes(normalizedWord) && typeof words[normalizedWord] === 'function') {
+          wordArray.push(normalizedWord);
+          ref.animations.push(['add-text', normalizedWord + ' ']);
+          words[normalizedWord](ref);
+          continue;
+        }
+
+        for (const [index, ch] of normalizedWord.split('').entries()) {
+          if (alphabets[ch] && typeof alphabets[ch] === 'function') {
+            wordArray.push(ch);
+            if (index === normalizedWord.length - 1)
+              ref.animations.push(['add-text', ch + ' ']);
+            else
+              ref.animations.push(['add-text', ch]);
+            alphabets[ch](ref);
+          }
+        }
+      }
+
+      setCaptionWords(wordArray);
+      setCurrentWordIndex(0);
+
+      if (!ref.pending && ref.animations.length > 0) {
+        ref.pending = true;
+        ref.animate();
+      }
+    } finally {
       setIsTranslating(false);
     }
   }
@@ -231,6 +465,52 @@ function Convert() {
   const stopListening = () => {
     SpeechRecognition.stopListening();
   }
+
+  const importWordAnimationJson = async () => {
+    if (!movelistFile) {
+      setMovelistImportError('Please choose a movelist JSON file first.');
+      setMovelistImportMessage('');
+      return;
+    }
+
+    try {
+      const fileContent = await movelistFile.text();
+      const payload = JSON.parse(fileContent);
+
+      const moveNameRaw = typeof payload?.move === 'string'
+        ? payload.move
+        : (typeof payload?.word === 'string' ? payload.word : '');
+
+      const moveName = moveNameRaw.trim().toUpperCase();
+      if (!moveName) {
+        throw new Error('Missing "move" (or "word") in JSON payload.');
+      }
+
+      if (!Array.isArray(payload?.poses) || payload.poses.length === 0) {
+        throw new Error('JSON must contain a non-empty "poses" array.');
+      }
+
+      const validPoseCount = payload.poses.filter((pose) => pose?.snapshot).length;
+      if (validPoseCount === 0) {
+        throw new Error('JSON poses do not contain snapshots.');
+      }
+
+      const normalizedPayload = {
+        ...payload,
+        move: moveName,
+        totalPoses: payload.totalPoses || payload.poses.length,
+      };
+
+      saveStoredMoveList(moveName, normalizedPayload);
+      setMovelistImportError('');
+      setMovelistImportMessage(`Imported "${moveName}" with ${normalizedPayload.poses.length} poses. You can use this word in Convert now.`);
+      setMovelistFile(null);
+    } catch (error) {
+      console.error('Movelist import failed:', error);
+      setMovelistImportMessage('');
+      setMovelistImportError(`Import failed: ${error.message}`);
+    }
+  };
 
   return (
     <div className='container-fluid page-container-cream'>
@@ -319,6 +599,54 @@ function Convert() {
           >
             {isTranslating ? 'Translating...' : 'Start Animations'}
           </button>
+
+          <label className='label-style mt-2'>
+            Import Word Animation JSON
+          </label>
+          <input
+            type='file'
+            accept='.json,application/json'
+            className='w-100 input-style'
+            onChange={(event) => {
+              const selectedFile = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+              setMovelistFile(selectedFile);
+              setMovelistImportMessage('');
+              setMovelistImportError('');
+            }}
+          />
+          <button
+            className='btn btn-brown w-100 btn-style btn-start'
+            onClick={importWordAnimationJson}
+            disabled={!movelistFile}
+          >
+            Import JSON
+          </button>
+          {movelistImportMessage && (
+            <div style={{
+              padding: '8px',
+              marginBottom: '12px',
+              backgroundColor: '#d4edda',
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: '#155724'
+            }}>
+              <i className="fa fa-check-circle" style={{ marginRight: '8px' }} />
+              {movelistImportMessage}
+            </div>
+          )}
+          {movelistImportError && (
+            <div style={{
+              padding: '8px',
+              marginBottom: '12px',
+              backgroundColor: '#f8d7da',
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: '#721c24'
+            }}>
+              <i className="fa fa-exclamation-circle" style={{ marginRight: '8px' }} />
+              {movelistImportError}
+            </div>
+          )}
         </div>
         <div className='col-md-7' style={{ position: 'relative' }}>
           <div id='canvas' />

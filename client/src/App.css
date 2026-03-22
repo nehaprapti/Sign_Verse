@@ -322,3 +322,42 @@ i {
         padding: 10px 20px;
     }
 }
+
+.simulator-input {
+    margin-top: 10px !important;
+}
+
+.simulator-status {
+    margin-top: 14px;
+    padding: 10px;
+    border-radius: 6px;
+    background-color: #fff8dc;
+    border: 1px solid #8b4513;
+    color: #654321;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.simulator-keymap {
+    margin-top: 28px;
+    padding: 10px;
+    border: 1px dashed #8b4513;
+    border-radius: 8px;
+    background-color: #fff8dc;
+}
+
+.simulator-keymap-title {
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #654321;
+}
+
+.simulator-keymap p {
+    margin-bottom: 6px;
+    color: #654321;
+    font-size: 13px;
+}
+
+.simulator-zoom-btn {
+    width: 49%;
+}
