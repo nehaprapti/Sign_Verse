@@ -397,3 +397,236 @@ i {
     border: 1px solid #d2b48c;
     background-color: #ffffff;
 }
+
+/* ========================================================================
+   Evaluation Engine Panel Styles
+   ======================================================================== */
+
+.eval-panel {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 10px;
+    border: 2px solid #8b4513;
+    background-color: #fff8dc;
+    animation: eval-fade-in 0.35s ease-out;
+}
+
+.eval-panel-running {
+    border-color: #c9a94e;
+    background-color: #fffbe6;
+}
+
+.eval-panel-passed {
+    border-color: #4caf50;
+    background: linear-gradient(135deg, #e8f5e9 0%, #fff8dc 100%);
+}
+
+.eval-panel-failed {
+    border-color: #e53935;
+    background: linear-gradient(135deg, #ffebee 0%, #fff8dc 100%);
+}
+
+.eval-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.eval-icon {
+    font-size: 22px;
+}
+
+.eval-icon-spin {
+    display: inline-block;
+    animation: eval-spin 1.2s linear infinite;
+}
+
+.eval-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #654321;
+}
+
+.eval-subtitle {
+    font-size: 13px;
+    color: #8b7355;
+    margin: 0 0 10px;
+}
+
+.eval-progress-bar {
+    height: 6px;
+    border-radius: 3px;
+    background-color: #e0d8c8;
+    overflow: hidden;
+}
+
+.eval-progress-bar-fill {
+    height: 100%;
+    width: 40%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #8B4513, #D2691E, #8B4513);
+    animation: eval-progress-slide 1.5s ease-in-out infinite;
+}
+
+/* Summary card */
+.eval-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.65);
+    border: 1px solid #d2b48c;
+}
+
+.eval-summary-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #654321;
+    padding: 3px 6px;
+}
+
+.eval-pass-text {
+    color: #2e7d32 !important;
+}
+
+.eval-fail-text {
+    color: #c62828 !important;
+}
+
+/* Per-pose results */
+.eval-results-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    padding-right: 4px;
+}
+
+.eval-results-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #654321;
+    margin: 0 0 6px;
+}
+
+.eval-result-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    transition: background-color 0.2s ease;
+}
+
+.eval-result-pass {
+    background-color: rgba(76, 175, 80, 0.12);
+}
+
+.eval-result-fail {
+    background-color: rgba(229, 57, 53, 0.1);
+}
+
+.eval-result-name {
+    font-weight: 600;
+    color: #654321;
+}
+
+.eval-result-metric {
+    color: #8b7355;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.eval-failed-joints {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.eval-failed-joint-tag {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background-color: #ffcdd2;
+    color: #b71c1c;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* Action buttons */
+.eval-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.eval-action-btn {
+    flex: 1;
+    font-size: 14px !important;
+    padding: 8px !important;
+    margin-top: 0 !important;
+}
+
+.eval-dismiss-btn {
+    font-size: 14px !important;
+    padding: 8px !important;
+    margin-top: 8px !important;
+}
+
+.eval-replay-btn {
+    font-size: 13px !important;
+    padding: 6px !important;
+    margin-top: 8px !important;
+}
+
+/* Upload-and-Evaluate tool */
+.eval-upload-panel {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px dashed #8b4513;
+    background-color: #fff8dc;
+}
+
+.eval-upload-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #654321;
+    margin: 0 0 6px;
+}
+
+.eval-upload-subtitle {
+    font-size: 12px;
+    color: #8b7355;
+    margin: 0 0 8px;
+}
+
+/* Animations */
+@keyframes eval-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes eval-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes eval-progress-slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+}

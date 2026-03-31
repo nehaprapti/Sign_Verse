@@ -10,6 +10,15 @@ import ybotPic from '../Models/ybot/ybot.png';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { defaultPose } from '../Animations/defaultPose';
+import EvaluationPanel from '../Components/EvaluationPanel';
+import {
+  computePoseError,
+  evaluatePoseAgainstTolerance,
+  buildEvaluationSummary,
+  validateMoveListSchema,
+  DEFAULT_AVG_TOLERANCE_DEG,
+  DEFAULT_MAX_TOLERANCE_DEG,
+} from '../Utils/evaluationUtils';
 
 const LEFT_HAND_CANDIDATES = ['mixamorigLeftHand', 'LeftHand'];
 const RIGHT_HAND_CANDIDATES = ['mixamorigRightHand', 'RightHand'];
@@ -88,6 +97,17 @@ function Simulate() {
   const [statusMessage, setStatusMessage] = useState('Use keyboard/mouse to pose the avatar hands.');
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
   const [photoFileName, setPhotoFileName] = useState('');
+
+  // ── Evaluation Engine State ──────────────────────────────────────────
+  const [evaluationStatus, setEvaluationStatus] = useState('idle'); // idle | running | passed | failed
+  const [evaluationResults, setEvaluationResults] = useState([]);
+  const [evaluationSummary, setEvaluationSummary] = useState(null);
+  const [evaluationPassed, setEvaluationPassed] = useState(false); // gates Save button
+  const [evaluatedPayload, setEvaluatedPayload] = useState(null); // payload that passed eval
+  const [evalUploadFile, setEvalUploadFile] = useState(null);
+  const [evalUploadMessage, setEvalUploadMessage] = useState('');
+  const [currentEvalPoseIndex, setCurrentEvalPoseIndex] = useState(-1); // which pose is being shown
+
   const selectedHandRef = useRef('left');
   const moveStepRef = useRef(0.02);
   const rotationStepRef = useRef(0.05);
@@ -653,6 +673,16 @@ function Simulate() {
     setStatusMessage(message);
   }, [ref]);
 
+  // Reset evaluation whenever poses change
+  const resetEvaluation = useCallback(() => {
+    setEvaluationStatus('idle');
+    setEvaluationResults([]);
+    setEvaluationSummary(null);
+    setEvaluationPassed(false);
+    setEvaluatedPayload(null);
+    setCurrentEvalPoseIndex(-1);
+  }, []);
+
   const markCurrentPose = useCallback(() => {
     if (!ref.avatar) {
       setStatusMessage('Avatar not loaded yet. Please wait and try again.');
@@ -683,7 +713,8 @@ function Simulate() {
     setMarkedPoses((prev) => [...prev, poseEntry]);
     setPoseName(`Pose ${nextIndex + 1}`);
     setStatusMessage(`Marked ${normalizedPoseName}.`);
-  }, [captureHandPoseSnapshot, markedPoses.length, poseName, ref.avatar]);
+    resetEvaluation(); // poses changed, must re-evaluate
+  }, [captureHandPoseSnapshot, markedPoses.length, poseName, ref.avatar, resetEvaluation]);
 
   const playMarkedPoses = useCallback(() => {
     if (markedPoses.length === 0) {
@@ -765,7 +796,8 @@ function Simulate() {
     stopPosePlayback('Cleared all marked poses.');
     setMarkedPoses([]);
     setPoseName('Pose 1');
-  }, [stopPosePlayback]);
+    resetEvaluation(); // poses cleared, must re-evaluate
+  }, [stopPosePlayback, resetEvaluation]);
 
   const applyCameraFingerPose = useCallback((hand, landmarks) => {
     const fingerRig = getFingerRig(hand);
@@ -889,30 +921,71 @@ function Simulate() {
     setStatusMessage(`Saved ${capturedFrames.length} frames to JSON for word "${normalizedWord}".`);
   };
 
-  const saveMoveListAsJson = () => {
-    if (markedPoses.length === 0) {
-      setStatusMessage('Mark at least one pose before saving move list JSON.');
-      return;
+  // ── Phase 2: JSON Round-Trip Evaluation Function ──────────────────────
+  // ── Visible Evaluation: replay each pose on avatar with real delay ──
+  const VISIBLE_POSE_DELAY_MS = 700;
+  const SETTLE_DELAY_MS = 80;
+
+  const evaluateMoveListVisually = useCallback(async (payload) => {
+    const validation = validateMoveListSchema(payload);
+    if (!validation.valid) {
+      return { error: validation.error };
     }
 
-    const normalizedWord = (wordName || 'NEW_WORD').trim().toUpperCase();
-    const normalizedMoveName = normalizedWord.toLowerCase();
+    const poseResults = [];
 
-    const payload = {
-      move: normalizedWord,
-      avatar: bot === xbot ? 'xbot' : 'ybot',
-      totalPoses: markedPoses.length,
-      loopPlaybackDefault: isPoseLoopEnabled,
-      fingerCloseLevels,
-      createdAt: new Date().toISOString(),
-      poses: markedPoses.map((pose, index) => ({
-        step: index + 1,
-        id: pose.id,
-        name: pose.name,
-        capturedAt: pose.capturedAt,
-        snapshot: pose.snapshot,
-      })),
-    };
+    for (let i = 0; i < payload.poses.length; i++) {
+      const poseEntry = payload.poses[i];
+      const expectedSnapshot = poseEntry.snapshot;
+
+      setCurrentEvalPoseIndex(i);
+      setStatusMessage(`Evaluating pose ${i + 1}/${payload.poses.length}: ${poseEntry.name || 'Pose ' + (i + 1)}...`);
+
+      applyFullPoseSnapshot(expectedSnapshot);
+
+      await new Promise((resolve) => setTimeout(resolve, VISIBLE_POSE_DELAY_MS));
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS));
+
+      const actualSnapshot = {
+        leftHand: captureHandPoseSnapshot('left'),
+        rightHand: captureHandPoseSnapshot('right'),
+      };
+
+      const errorResult = computePoseError(
+        expectedSnapshot,
+        actualSnapshot,
+        DEFAULT_MAX_TOLERANCE_DEG,
+      );
+
+      const pass = evaluatePoseAgainstTolerance(
+        errorResult,
+        DEFAULT_AVG_TOLERANCE_DEG,
+        DEFAULT_MAX_TOLERANCE_DEG,
+      );
+
+      poseResults.push({
+        poseName: poseEntry.name || `Pose ${i + 1}`,
+        expectedPoseIndex: i,
+        averageErrorDegrees: errorResult.averageErrorDegrees,
+        maxErrorDegrees: errorResult.maxErrorDegrees,
+        pass,
+        failedJoints: errorResult.failedJoints,
+      });
+    }
+
+    setCurrentEvalPoseIndex(-1);
+
+    return buildEvaluationSummary(
+      poseResults,
+      DEFAULT_AVG_TOLERANCE_DEG,
+      DEFAULT_MAX_TOLERANCE_DEG,
+    );
+  }, [applyFullPoseSnapshot, captureHandPoseSnapshot]);
+
+  // ── Helper: download + localStorage save ──
+  const executeMoveListSave = useCallback((payload) => {
+    const normalizedWord = (payload.move || 'NEW_WORD').trim().toUpperCase();
+    const normalizedMoveName = normalizedWord.toLowerCase();
 
     const json = JSON.stringify(payload, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -932,12 +1005,164 @@ function Simulate() {
       existingMap[normalizedWord] = payload;
       localStorage.setItem(MOVELIST_STORAGE_KEY, JSON.stringify(existingMap));
 
-      setStatusMessage(`Saved move list JSON with ${markedPoses.length} poses for "${normalizedWord}" and registered it for Convert.`);
+      setStatusMessage(`Saved move list JSON with ${payload.poses.length} poses for "${normalizedWord}" and registered it for Convert.`);
     } catch (error) {
       console.error('Unable to persist move list in localStorage:', error);
-      setStatusMessage(`Saved move list JSON with ${markedPoses.length} poses for "${normalizedWord}" (browser save unavailable).`);
+      setStatusMessage(`Saved move list JSON with ${payload.poses.length} poses for "${normalizedWord}" (browser save unavailable).`);
     }
-  };
+  }, []);
+
+  // ── Build the move list payload from current state ──
+  const buildMoveListPayload = useCallback(() => {
+    const normalizedWord = (wordName || 'NEW_WORD').trim().toUpperCase();
+    return {
+      move: normalizedWord,
+      avatar: bot === xbot ? 'xbot' : 'ybot',
+      totalPoses: markedPoses.length,
+      loopPlaybackDefault: isPoseLoopEnabled,
+      fingerCloseLevels,
+      createdAt: new Date().toISOString(),
+      poses: markedPoses.map((pose, index) => ({
+        step: index + 1,
+        id: pose.id,
+        name: pose.name,
+        capturedAt: pose.capturedAt,
+        snapshot: pose.snapshot,
+      })),
+    };
+  }, [bot, fingerCloseLevels, isPoseLoopEnabled, markedPoses, wordName]);
+
+  // ── "Evaluate Moves" button ──
+  const evaluateMarkedPoses = useCallback(async () => {
+    if (markedPoses.length === 0) {
+      setStatusMessage('Mark at least one pose before evaluating.');
+      return;
+    }
+
+    const payload = buildMoveListPayload();
+
+    setEvaluationStatus('running');
+    setEvaluationResults([]);
+    setEvaluationSummary(null);
+    setEvaluationPassed(false);
+    setEvaluatedPayload(null);
+    setStatusMessage('Evaluating: replaying all poses on avatar...');
+
+    try {
+      const summary = await evaluateMoveListVisually(payload);
+
+      if (summary.error) {
+        setStatusMessage(`Evaluation error: ${summary.error}`);
+        setEvaluationStatus('idle');
+        return;
+      }
+
+      setEvaluationResults(summary.results);
+      setEvaluationSummary(summary);
+
+      if (summary.overallPass) {
+        setEvaluationStatus('passed');
+        setEvaluationPassed(true);
+        setEvaluatedPayload(payload);
+        setStatusMessage(`Evaluation passed! All ${summary.totalPoses} poses verified. You can now save.`);
+      } else {
+        setEvaluationStatus('failed');
+        setEvaluationPassed(false);
+        setEvaluatedPayload(null);
+        setStatusMessage(`Evaluation failed: ${summary.failedPoses} of ${summary.totalPoses} poses mismatch. Fix poses and re-evaluate.`);
+      }
+    } catch (error) {
+      console.error('Evaluation error:', error);
+      setEvaluationStatus('idle');
+      setEvaluationPassed(false);
+      setStatusMessage('Evaluation encountered an unexpected error.');
+    }
+  }, [buildMoveListPayload, evaluateMoveListVisually, markedPoses.length]);
+
+  // ── "Save Move List JSON" - only after evaluation passed ──
+  const saveMoveListAsJson = useCallback(() => {
+    if (!evaluationPassed || !evaluatedPayload) {
+      setStatusMessage('Run evaluation first. Save is only available after all poses pass.');
+      return;
+    }
+    executeMoveListSave(evaluatedPayload);
+  }, [evaluationPassed, evaluatedPayload, executeMoveListSave]);
+
+  // ── Evaluation panel callbacks ──
+  const handleEvalSaveAnyway = useCallback(() => {
+    const payload = evaluatedPayload || buildMoveListPayload();
+    executeMoveListSave(payload);
+    setStatusMessage('Saved move list (evaluation overridden).');
+    setEvaluationStatus('idle');
+  }, [buildMoveListPayload, evaluatedPayload, executeMoveListSave]);
+
+  const handleEvalCancel = useCallback(() => {
+    setEvaluationStatus('idle');
+    setStatusMessage('Evaluation dismissed. Adjust poses and re-evaluate.');
+  }, []);
+
+  const handleEvalDismiss = useCallback(() => {
+    setEvaluationStatus('idle');
+  }, []);
+
+  const handleReplayFailedPoses = useCallback(() => {
+    const failedIndices = evaluationResults
+      .filter((r) => !r.pass)
+      .map((r) => r.expectedPoseIndex);
+
+    if (failedIndices.length === 0 || markedPoses.length === 0) {
+      return;
+    }
+
+    const firstFailed = failedIndices[0];
+    if (markedPoses[firstFailed]) {
+      applyFullPoseSnapshot(markedPoses[firstFailed].snapshot);
+      setStatusMessage(`Applied failed pose: ${markedPoses[firstFailed].name}. Use Marked Pose List to step through others.`);
+    }
+  }, [applyFullPoseSnapshot, evaluationResults, markedPoses]);
+
+  // ── Upload-and-Evaluate Tool ──
+  const handleEvalUpload = useCallback(async () => {
+    if (!evalUploadFile) {
+      setEvalUploadMessage('Choose a move-list JSON file first.');
+      return;
+    }
+
+    try {
+      const fileContent = await evalUploadFile.text();
+      const payload = JSON.parse(fileContent);
+
+      setEvaluationStatus('running');
+      setEvaluationResults([]);
+      setEvaluationSummary(null);
+      setEvalUploadMessage('');
+      setStatusMessage('Evaluating uploaded move list on avatar...');
+
+      const summary = await evaluateMoveListVisually(payload);
+
+      if (summary.error) {
+        setStatusMessage(`Upload evaluation error: ${summary.error}`);
+        setEvaluationStatus('idle');
+        setEvalUploadMessage(`Validation error: ${summary.error}`);
+        return;
+      }
+
+      setEvaluationResults(summary.results);
+      setEvaluationSummary(summary);
+      setEvaluationStatus(summary.overallPass ? 'passed' : 'failed');
+      setEvalUploadMessage(
+        summary.overallPass
+          ? `Upload evaluation passed: ${summary.passedPoses}/${summary.totalPoses} poses OK.`
+          : `Upload evaluation failed: ${summary.failedPoses}/${summary.totalPoses} poses exceeded tolerance.`,
+      );
+      setStatusMessage('Upload evaluation complete. See results below.');
+    } catch (error) {
+      console.error('Upload evaluation error:', error);
+      setEvalUploadMessage(`Error: ${error.message}`);
+      setEvaluationStatus('idle');
+    }
+  }, [evalUploadFile, evaluateMoveListVisually]);
+
 
   const applyKeyboardControl = useCallback((event) => {
     const key = event.key.toLowerCase();
@@ -1683,14 +1908,78 @@ function Simulate() {
               Clear Poses
             </button>
           </div>
-          <button className='btn btn-success w-100 btn-style' onClick={saveMoveListAsJson}>
-            Save Move List JSON
+          {/* Step 1: Evaluate Moves (visually replays all poses on avatar) */}
+          <button
+            className='btn btn-brown w-100 btn-style'
+            onClick={evaluateMarkedPoses}
+            disabled={markedPoses.length === 0 || evaluationStatus === 'running'}
+          >
+            {evaluationStatus === 'running'
+              ? `Evaluating Pose ${currentEvalPoseIndex + 1}/${markedPoses.length}...`
+              : 'Evaluate Moves'}
           </button>
+
+          {/* Step 2: Save Move List JSON (only enabled after eval passes) */}
+          <button
+            className='btn btn-success w-100 btn-style'
+            onClick={saveMoveListAsJson}
+            disabled={!evaluationPassed || evaluationStatus === 'running'}
+            title={!evaluationPassed ? 'Run evaluation first to unlock save' : 'Save the verified move list as JSON'}
+          >
+            {evaluationPassed ? 'Save Move List JSON' : 'Save Move List JSON (Evaluate First)'}
+          </button>
+
           <button className='btn btn-outline-dark w-100 btn-style' onClick={setAttentionPose}>
             Attention Pose (Lower Hands)
           </button>
           <div className='simulator-status'>Marked Poses: {markedPoses.length}</div>
           <div className='simulator-status'>Pose Playback: {isPosePlaybackActive ? 'Playing' : 'Idle'}</div>
+          <div className='simulator-status'>
+            Evaluation: {evaluationStatus === 'idle'
+              ? (evaluationPassed ? 'Passed - Ready to Save' : 'Not Run')
+              : evaluationStatus === 'running'
+                ? `Running (Pose ${currentEvalPoseIndex + 1}/${markedPoses.length})`
+                : evaluationStatus === 'passed'
+                  ? 'Passed'
+                  : 'Failed'}
+          </div>
+
+          {/* Evaluation Results Panel */}
+          <EvaluationPanel
+            evaluationStatus={evaluationStatus}
+            evaluationResults={evaluationResults}
+            evaluationSummary={evaluationSummary}
+            onSaveAnyway={handleEvalSaveAnyway}
+            onCancel={handleEvalCancel}
+            onReplayFailed={handleReplayFailedPoses}
+            onDismiss={handleEvalDismiss}
+          />
+
+          {/* Upload & Evaluate Tool */}
+          <div className='eval-upload-panel'>
+            <p className='eval-upload-title'>Upload & Evaluate Move List</p>
+            <p className='eval-upload-subtitle'>Upload an external move-list JSON to visually verify poses on the avatar.</p>
+            <input
+              type='file'
+              accept='.json,application/json'
+              className='w-100 input-style simulator-input'
+              onChange={(event) => {
+                const file = event.target.files && event.target.files[0];
+                setEvalUploadFile(file || null);
+                setEvalUploadMessage('');
+              }}
+            />
+            <button
+              className='btn btn-outline-dark w-100 btn-style'
+              onClick={handleEvalUpload}
+              disabled={!evalUploadFile || evaluationStatus === 'running'}
+            >
+              Evaluate Uploaded JSON
+            </button>
+            {evalUploadMessage && (
+              <div className='simulator-status'>{evalUploadMessage}</div>
+            )}
+          </div>
           <div className='form-check mt-2'>
             <input
               id='pose-loop-playback'
