@@ -44,6 +44,100 @@ const OPEN_FINGER_LEVELS = {
 
 const MOVELIST_STORAGE_KEY = 'signverse_custom_movelists';
 
+const normalizeMoveKey = (rawValue) => {
+  return String(rawValue || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+};
+
+const buildLegacyMoveKey = (normalizedKey) => {
+  return String(normalizedKey || '').replace(/[^A-Z]/g, '');
+};
+
+const STRICT_PROMPT_TEMPLATE = `You are generating motion data for the SignVerse avatar system.
+
+TASK
+- Convert the user's motion description into a single valid JSON object only.
+- Do not include explanation text, markdown, or code fences.
+
+STRICT OUTPUT RULES
+- Return exactly one JSON object.
+- Required top-level keys: move, totalPoses, poses.
+- move must be uppercase letters/numbers/underscore only.
+- totalPoses must equal poses.length.
+- poses must be a non-empty array.
+- Each pose item must contain: index, name, snapshot.
+- snapshot must contain: leftHand and rightHand.
+- Each hand must contain: arm, forearm, hand, fingers.
+- arm/forearm/hand must each contain numeric x, y, z in radians.
+- fingers must be an object where each key is one of:
+  thumb1, thumb2, index1, index2, index3, middle1, middle2, middle3,
+  ring1, ring2, ring3, pinky1, pinky2, pinky3
+- Every provided finger joint must contain numeric x, y, z in radians.
+
+USER MOTION DESCRIPTION
+[PASTE VIDEO DESCRIPTION OR PROMPT HERE]
+
+TARGET SHAPE (example values; replace with real values)
+{
+  "move": "CUSTOM_MOVE_NAME",
+  "totalPoses": 2,
+  "poses": [
+    {
+      "index": 1,
+      "name": "POSE_1",
+      "snapshot": {
+        "leftHand": {
+          "arm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "forearm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "hand": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "fingers": {
+            "thumb1": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "index1": { "x": 0.0, "y": 0.0, "z": 0.0 }
+          }
+        },
+        "rightHand": {
+          "arm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "forearm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "hand": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "fingers": {
+            "thumb1": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "index1": { "x": 0.0, "y": 0.0, "z": 0.0 }
+          }
+        }
+      }
+    }
+  ]
+}`;
+
+const extractJsonObjectFromText = (rawText) => {
+  const trimmed = typeof rawText === 'string' ? rawText.trim() : '';
+  if (!trimmed) {
+    throw new Error('Prompt text is empty. Paste the model output first.');
+  }
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch && fencedMatch[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBraceIndex = trimmed.indexOf('{');
+  const lastBraceIndex = trimmed.lastIndexOf('}');
+  if (firstBraceIndex >= 0 && lastBraceIndex > firstBraceIndex) {
+    return trimmed.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+  }
+
+  return trimmed;
+};
+
+const parseMoveListFromPromptText = (promptText) => {
+  const jsonText = extractJsonObjectFromText(promptText);
+  return JSON.parse(jsonText);
+};
+
 const toVector = (vector) => ({
   x: Number(vector.x.toFixed(4)),
   y: Number(vector.y.toFixed(4)),
@@ -81,6 +175,7 @@ function Simulate() {
   const [wordName, setWordName] = useState('ABBREVIATION');
   const [poseName, setPoseName] = useState('Pose 1');
   const [selectedHand, setSelectedHand] = useState('left');
+  const [mirrorModeEnabled, setMirrorModeEnabled] = useState(false);
   const [fingerCloseLevels, setFingerCloseLevels] = useState(DEFAULT_FINGER_CLOSE_LEVELS);
   const [stationaryFinger, setStationaryFinger] = useState('index');
   const [movingFinger, setMovingFinger] = useState('thumb');
@@ -106,9 +201,15 @@ function Simulate() {
   const [evaluatedPayload, setEvaluatedPayload] = useState(null); // payload that passed eval
   const [evalUploadFile, setEvalUploadFile] = useState(null);
   const [evalUploadMessage, setEvalUploadMessage] = useState('');
+  const [evalPromptText, setEvalPromptText] = useState('');
+  const [evalPromptMessage, setEvalPromptMessage] = useState('');
+  const [evalPromptError, setEvalPromptError] = useState('');
+  const [evalTemplateCopyMessage, setEvalTemplateCopyMessage] = useState('');
+  const [evalTemplateCopyError, setEvalTemplateCopyError] = useState('');
   const [currentEvalPoseIndex, setCurrentEvalPoseIndex] = useState(-1); // which pose is being shown
 
   const selectedHandRef = useRef('left');
+  const mirrorModeRef = useRef(false);
   const moveStepRef = useRef(0.02);
   const rotationStepRef = useRef(0.05);
   const cameraVideoRef = useRef(null);
@@ -139,6 +240,10 @@ function Simulate() {
   useEffect(() => {
     selectedHandRef.current = selectedHand;
   }, [selectedHand]);
+
+  useEffect(() => {
+    mirrorModeRef.current = mirrorModeEnabled;
+  }, [mirrorModeEnabled]);
 
   useEffect(() => {
     moveStepRef.current = moveStep;
@@ -460,6 +565,23 @@ function Simulate() {
     }
   };
 
+  const applyHandRigDeltas = useCallback((sourceHand, deltas) => {
+    const sourceRig = getArmRig(sourceHand);
+    applyRigDeltas(sourceRig, deltas);
+
+    if (!mirrorModeRef.current || sourceHand !== 'left') {
+      return;
+    }
+
+    const mirroredDeltas = deltas.map(([part, axis, delta]) => {
+      const mirroredDelta = axis === 'y' || axis === 'z' ? -delta : delta;
+      return [part, axis, mirroredDelta];
+    });
+
+    const rightRig = getArmRig('right');
+    applyRigDeltas(rightRig, mirroredDeltas);
+  }, [getArmRig]);
+
   const getFingerJointWeightsForLevel = useCallback((level) => {
     if (level <= 0) {
       return {
@@ -716,16 +838,18 @@ function Simulate() {
     resetEvaluation(); // poses changed, must re-evaluate
   }, [captureHandPoseSnapshot, markedPoses.length, poseName, ref.avatar, resetEvaluation]);
 
-  const playMarkedPoses = useCallback(() => {
-    if (markedPoses.length === 0) {
+  const playPoseList = useCallback((poseList, options = {}) => {
+    const { startLabel = 'marked', completedLabel = 'Pose playback completed.' } = options;
+
+    if (!Array.isArray(poseList) || poseList.length === 0) {
       setStatusMessage('Mark at least one pose before playback.');
-      return;
+      return false;
     }
 
-    if (markedPoses.length === 1) {
-      applyFullPoseSnapshot(markedPoses[0].snapshot);
-      setStatusMessage(`Applied ${markedPoses[0].name}. Add more poses to animate.`);
-      return;
+    if (poseList.length === 1) {
+      applyFullPoseSnapshot(poseList[0].snapshot);
+      setStatusMessage(`Applied ${poseList[0].name || 'Pose 1'}. Add more poses to animate.`);
+      return true;
     }
 
     if (ref.posePlaybackFrameId) {
@@ -734,18 +858,18 @@ function Simulate() {
     }
 
     setIsPosePlaybackActive(true);
-    setStatusMessage(`${isPoseLoopEnabled ? 'Looping' : 'Playing'} ${markedPoses.length} marked poses...`);
+    setStatusMessage(`${isPoseLoopEnabled ? 'Looping' : 'Playing'} ${poseList.length} ${startLabel} poses...`);
 
     const transitionDurationMs = 700;
     let segmentIndex = 0;
     let segmentStartTime = performance.now();
 
     const animateSegment = (now) => {
-      const fromPose = markedPoses[segmentIndex]?.snapshot;
-      const toPose = markedPoses[segmentIndex + 1]?.snapshot;
+      const fromPose = poseList[segmentIndex]?.snapshot;
+      const toPose = poseList[segmentIndex + 1]?.snapshot;
 
       if (!fromPose || !toPose) {
-        stopPosePlayback('Marked pose playback completed.');
+        stopPosePlayback(completedLabel);
         return;
       }
 
@@ -762,8 +886,8 @@ function Simulate() {
       segmentIndex += 1;
       segmentStartTime = now;
 
-      if (segmentIndex >= markedPoses.length - 1) {
-        applyFullPoseSnapshot(markedPoses[markedPoses.length - 1].snapshot);
+      if (segmentIndex >= poseList.length - 1) {
+        applyFullPoseSnapshot(poseList[poseList.length - 1].snapshot);
 
         if (isPoseLoopEnabled) {
           segmentIndex = 0;
@@ -772,7 +896,7 @@ function Simulate() {
           return;
         }
 
-        stopPosePlayback('Marked pose playback completed.');
+        stopPosePlayback(completedLabel);
         return;
       }
 
@@ -780,7 +904,15 @@ function Simulate() {
     };
 
     ref.posePlaybackFrameId = requestAnimationFrame(animateSegment);
-  }, [applyFullPoseSnapshot, interpolatePoseSnapshot, isPoseLoopEnabled, markedPoses, ref, stopPosePlayback]);
+    return true;
+  }, [applyFullPoseSnapshot, interpolatePoseSnapshot, isPoseLoopEnabled, ref, stopPosePlayback]);
+
+  const playMarkedPoses = useCallback(() => {
+    playPoseList(markedPoses, {
+      startLabel: 'marked',
+      completedLabel: 'Marked pose playback completed.',
+    });
+  }, [markedPoses, playPoseList]);
 
   const applyMarkedPoseByIndex = useCallback((index) => {
     const targetPose = markedPoses[index];
@@ -984,10 +1116,14 @@ function Simulate() {
 
   // ── Helper: download + localStorage save ──
   const executeMoveListSave = useCallback((payload) => {
-    const normalizedWord = (payload.move || 'NEW_WORD').trim().toUpperCase();
+    const normalizedWord = normalizeMoveKey(payload.move || 'NEW_WORD') || 'NEW_WORD';
     const normalizedMoveName = normalizedWord.toLowerCase();
+    const normalizedPayload = {
+      ...payload,
+      move: normalizedWord,
+    };
 
-    const json = JSON.stringify(payload, null, 2);
+    const json = JSON.stringify(normalizedPayload, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
@@ -1002,19 +1138,23 @@ function Simulate() {
       const existingRaw = localStorage.getItem(MOVELIST_STORAGE_KEY);
       const existingMap = existingRaw ? JSON.parse(existingRaw) : {};
 
-      existingMap[normalizedWord] = payload;
+      existingMap[normalizedWord] = normalizedPayload;
+      const legacyKey = buildLegacyMoveKey(normalizedWord);
+      if (legacyKey && legacyKey !== normalizedWord) {
+        existingMap[legacyKey] = normalizedPayload;
+      }
       localStorage.setItem(MOVELIST_STORAGE_KEY, JSON.stringify(existingMap));
 
-      setStatusMessage(`Saved move list JSON with ${payload.poses.length} poses for "${normalizedWord}" and registered it for Convert.`);
+      setStatusMessage(`Saved move list JSON with ${normalizedPayload.poses.length} poses for "${normalizedWord}" and registered it for Convert.`);
     } catch (error) {
       console.error('Unable to persist move list in localStorage:', error);
-      setStatusMessage(`Saved move list JSON with ${payload.poses.length} poses for "${normalizedWord}" (browser save unavailable).`);
+      setStatusMessage(`Saved move list JSON with ${normalizedPayload.poses.length} poses for "${normalizedWord}" (browser save unavailable).`);
     }
   }, []);
 
   // ── Build the move list payload from current state ──
   const buildMoveListPayload = useCallback(() => {
-    const normalizedWord = (wordName || 'NEW_WORD').trim().toUpperCase();
+    const normalizedWord = normalizeMoveKey(wordName || 'NEW_WORD') || 'NEW_WORD';
     return {
       move: normalizedWord,
       avatar: bot === xbot ? 'xbot' : 'ybot',
@@ -1121,6 +1261,28 @@ function Simulate() {
     }
   }, [applyFullPoseSnapshot, evaluationResults, markedPoses]);
 
+  const runExternalPayloadEvaluation = useCallback(async (payload, startMessage) => {
+    setEvaluationStatus('running');
+    setEvaluationResults([]);
+    setEvaluationSummary(null);
+    setStatusMessage(startMessage);
+
+    const summary = await evaluateMoveListVisually(payload);
+
+    if (summary.error) {
+      setStatusMessage(`Evaluation error: ${summary.error}`);
+      setEvaluationStatus('idle');
+      return summary;
+    }
+
+    setEvaluationResults(summary.results);
+    setEvaluationSummary(summary);
+    setEvaluationStatus(summary.overallPass ? 'passed' : 'failed');
+    setStatusMessage('Evaluation complete. See results below.');
+
+    return summary;
+  }, [evaluateMoveListVisually]);
+
   // ── Upload-and-Evaluate Tool ──
   const handleEvalUpload = useCallback(async () => {
     if (!evalUploadFile) {
@@ -1132,36 +1294,159 @@ function Simulate() {
       const fileContent = await evalUploadFile.text();
       const payload = JSON.parse(fileContent);
 
-      setEvaluationStatus('running');
-      setEvaluationResults([]);
-      setEvaluationSummary(null);
       setEvalUploadMessage('');
-      setStatusMessage('Evaluating uploaded move list on avatar...');
+      setEvalPromptMessage('');
+      setEvalPromptError('');
 
-      const summary = await evaluateMoveListVisually(payload);
+      const summary = await runExternalPayloadEvaluation(payload, 'Evaluating uploaded move list on avatar...');
 
       if (summary.error) {
-        setStatusMessage(`Upload evaluation error: ${summary.error}`);
-        setEvaluationStatus('idle');
         setEvalUploadMessage(`Validation error: ${summary.error}`);
         return;
       }
 
-      setEvaluationResults(summary.results);
-      setEvaluationSummary(summary);
-      setEvaluationStatus(summary.overallPass ? 'passed' : 'failed');
       setEvalUploadMessage(
         summary.overallPass
           ? `Upload evaluation passed: ${summary.passedPoses}/${summary.totalPoses} poses OK.`
           : `Upload evaluation failed: ${summary.failedPoses}/${summary.totalPoses} poses exceeded tolerance.`,
       );
-      setStatusMessage('Upload evaluation complete. See results below.');
     } catch (error) {
       console.error('Upload evaluation error:', error);
       setEvalUploadMessage(`Error: ${error.message}`);
       setEvaluationStatus('idle');
     }
-  }, [evalUploadFile, evaluateMoveListVisually]);
+  }, [evalUploadFile, runExternalPayloadEvaluation]);
+
+  const copySimulateTemplate = useCallback(async () => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(STRICT_PROMPT_TEMPLATE);
+      } else {
+        const tempTextArea = document.createElement('textarea');
+        tempTextArea.value = STRICT_PROMPT_TEMPLATE;
+        tempTextArea.setAttribute('readonly', '');
+        tempTextArea.style.position = 'absolute';
+        tempTextArea.style.left = '-9999px';
+        document.body.appendChild(tempTextArea);
+        tempTextArea.select();
+
+        const copied = document.execCommand('copy');
+        document.body.removeChild(tempTextArea);
+        if (!copied) {
+          throw new Error('Clipboard command failed.');
+        }
+      }
+
+      setEvalTemplateCopyError('');
+      setEvalTemplateCopyMessage('Template copied. Paste it into ChatGPT/Claude.');
+    } catch (error) {
+      console.error('Template copy failed:', error);
+      setEvalTemplateCopyMessage('');
+      setEvalTemplateCopyError('Could not copy automatically. Select and copy manually.');
+    }
+  }, []);
+
+  const insertTemplateIntoPrompt = useCallback(() => {
+    setEvalPromptText(STRICT_PROMPT_TEMPLATE);
+    setEvalTemplateCopyMessage('Template inserted into prompt box.');
+    setEvalTemplateCopyError('');
+    setEvalPromptError('');
+  }, []);
+
+  const clearPromptText = useCallback(() => {
+    setEvalPromptText('');
+    setEvalPromptMessage('');
+    setEvalPromptError('');
+    setEvalTemplateCopyError('');
+    setEvalTemplateCopyMessage('Prompt box cleared.');
+  }, []);
+
+  const validatePromptJson = useCallback(() => {
+    try {
+      const payload = parseMoveListFromPromptText(evalPromptText);
+      const validation = validateMoveListSchema(payload);
+
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Prompt JSON failed schema validation.');
+      }
+
+      const moveName = typeof payload.move === 'string' ? payload.move : (payload.word || 'UNKNOWN_MOVE');
+      setEvalPromptError('');
+      setEvalPromptMessage(`Prompt JSON is valid for move "${String(moveName).toUpperCase()}" with ${payload.poses.length} poses.`);
+    } catch (error) {
+      setEvalPromptMessage('');
+      setEvalPromptError(`Validation failed: ${error.message}`);
+    }
+  }, [evalPromptText]);
+
+  const evaluatePromptJson = useCallback(async () => {
+    try {
+      const payload = parseMoveListFromPromptText(evalPromptText);
+      const validation = validateMoveListSchema(payload);
+
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Prompt JSON failed schema validation.');
+      }
+
+      setEvalUploadMessage('');
+      setEvalPromptMessage('');
+      setEvalPromptError('');
+
+      const summary = await runExternalPayloadEvaluation(payload, 'Evaluating pasted prompt JSON on avatar...');
+      if (summary.error) {
+        setEvalPromptError(`Evaluation error: ${summary.error}`);
+        return;
+      }
+
+      setEvalPromptMessage(
+        summary.overallPass
+          ? `Prompt evaluation passed: ${summary.passedPoses}/${summary.totalPoses} poses OK.`
+          : `Prompt evaluation failed: ${summary.failedPoses}/${summary.totalPoses} poses exceeded tolerance.`,
+      );
+    } catch (error) {
+      setEvalPromptMessage('');
+      setEvalPromptError(`Prompt evaluation failed: ${error.message}`);
+      setEvaluationStatus('idle');
+    }
+  }, [evalPromptText, runExternalPayloadEvaluation]);
+
+  const playPromptPoses = useCallback(() => {
+    try {
+      const payload = parseMoveListFromPromptText(evalPromptText);
+      const validation = validateMoveListSchema(payload);
+
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Prompt JSON failed schema validation.');
+      }
+
+      const normalizedPoseList = payload.poses
+        .filter((pose) => pose?.snapshot)
+        .map((pose, index) => ({
+          id: `${Date.now()}-prompt-${index + 1}`,
+          name: (pose?.name || `Prompt Pose ${index + 1}`).trim(),
+          capturedAt: new Date().toISOString(),
+          snapshot: pose.snapshot,
+        }));
+
+      if (normalizedPoseList.length === 0) {
+        throw new Error('Prompt JSON has no playable poses with snapshots.');
+      }
+
+      setMarkedPoses(normalizedPoseList);
+      setPoseName(`Pose ${normalizedPoseList.length + 1}`);
+      resetEvaluation();
+      setEvalPromptError('');
+      setEvalPromptMessage(`Loaded ${normalizedPoseList.length} prompt poses into simulator.`);
+
+      playPoseList(normalizedPoseList, {
+        startLabel: 'prompt',
+        completedLabel: 'Prompt pose playback completed.',
+      });
+    } catch (error) {
+      setEvalPromptMessage('');
+      setEvalPromptError(`Play failed: ${error.message}`);
+    }
+  }, [evalPromptText, playPoseList, resetEvaluation]);
 
 
   const applyKeyboardControl = useCallback((event) => {
@@ -1191,7 +1476,7 @@ function Simulate() {
       const step = rotationStepRef.current;
       const wristDelta = event.key === 'ArrowLeft' ? step : -step;
 
-      applyRigDeltas(rig, [
+      applyHandRigDeltas(activeHand, [
         ['hand', 'z', wristDelta],
         ['forearm', 'z', wristDelta * 0.45],
       ]);
@@ -1210,7 +1495,7 @@ function Simulate() {
       const step = rotationStepRef.current;
       const tiltDelta = event.key === 'ArrowUp' ? step : -step;
 
-      applyRigDeltas(rig, [
+      applyHandRigDeltas(activeHand, [
         ['hand', 'x', tiltDelta],
         ['forearm', 'x', tiltDelta * 0.35],
       ]);
@@ -1275,8 +1560,8 @@ function Simulate() {
     }
 
     event.preventDefault();
-    applyRigDeltas(rig, action);
-  }, [getArmRig, zoomCamera]);
+    applyHandRigDeltas(activeHand, action);
+  }, [applyHandRigDeltas, getArmRig, zoomCamera]);
 
   useEffect(() => {
     ref.scene = new THREE.Scene();
@@ -1345,7 +1630,8 @@ function Simulate() {
         return;
       }
 
-      const rig = getArmRig(selectedHandRef.current);
+      const activeHand = selectedHandRef.current;
+      const rig = getArmRig(activeHand);
       if (!rig.arm || !rig.forearm || !rig.hand) {
         return;
       }
@@ -1353,7 +1639,7 @@ function Simulate() {
       const xDelta = event.movementX * 0.0025;
       const yDelta = event.movementY * 0.0025;
 
-      applyRigDeltas(rig, [
+      applyHandRigDeltas(activeHand, [
         ['arm', 'y', xDelta],
         ['forearm', 'y', xDelta * 0.8],
         ['arm', 'x', yDelta],
@@ -1369,7 +1655,8 @@ function Simulate() {
         return;
       }
 
-      const rig = getArmRig(selectedHandRef.current);
+      const activeHand = selectedHandRef.current;
+      const rig = getArmRig(activeHand);
       if (!rig.arm || !rig.forearm) {
         return;
       }
@@ -1378,11 +1665,11 @@ function Simulate() {
       const zDelta = event.deltaY * -0.0012;
 
       if (horizontalDelta) {
-        applyRigDeltas(rig, [['forearm', 'y', horizontalDelta]]);
+        applyHandRigDeltas(activeHand, [['forearm', 'y', horizontalDelta]]);
       }
 
       if (zDelta) {
-        applyRigDeltas(rig, [
+        applyHandRigDeltas(activeHand, [
           ['arm', 'z', zDelta],
           ['forearm', 'z', zDelta * 0.7],
         ]);
@@ -1445,7 +1732,7 @@ function Simulate() {
         ref.renderer.dispose();
       }
     };
-  }, [applyKeyboardControl, bot, getArmRig, ref, zoomCamera]);
+  }, [applyHandRigDeltas, applyKeyboardControl, bot, getArmRig, ref, zoomCamera]);
 
   const resetPose = () => {
     if (!ref.avatar) {
@@ -1514,7 +1801,10 @@ function Simulate() {
   };
 
   const setFingerPose = useCallback((pose, target = 'selected') => {
-    const hands = target === 'both' ? ['left', 'right'] : [selectedHandRef.current];
+    const activeHand = selectedHandRef.current;
+    const hands = target === 'both'
+      ? ['left', 'right']
+      : (mirrorModeRef.current && activeHand === 'left' ? ['left', 'right'] : [activeHand]);
     const poseLevels = pose === 'close'
       ? fingerCloseLevels
       : OPEN_FINGER_LEVELS;
@@ -1551,6 +1841,15 @@ function Simulate() {
     }
 
     const hand = selectedHandRef.current;
+    if (mirrorModeRef.current && hand === 'left') {
+      if (pose === 'close') {
+        setStatusMessage('Mirror mode: both hands fingers closed using per-finger levels.');
+      } else {
+        setStatusMessage('Mirror mode: both hands fingers opened.');
+      }
+      return;
+    }
+
     if (pose === 'close') {
       setStatusMessage(`${hand === 'left' ? 'Left' : 'Right'} hand fingers closed using per-finger levels.`);
     } else {
@@ -1560,27 +1859,30 @@ function Simulate() {
 
   const setSingleFingerPose = useCallback((finger, pose) => {
     const hand = selectedHandRef.current;
-    const fingerRig = getFingerRig(hand);
+    const hands = mirrorModeRef.current && hand === 'left' ? ['left', 'right'] : [hand];
     const poseLevels = pose === 'close'
       ? fingerCloseLevels
       : OPEN_FINGER_LEVELS;
 
-    const fingerJointMap = getFingerJointMapByLevels(hand, poseLevels);
-
-    const joints = fingerJointMap[finger];
-    if (!joints) {
-      return;
-    }
-
     let updated = 0;
-    for (const [joint, axis, value] of joints) {
-      const bone = fingerRig[joint];
-      if (!bone) {
+    for (const targetHand of hands) {
+      const fingerRig = getFingerRig(targetHand);
+      const fingerJointMap = getFingerJointMapByLevels(targetHand, poseLevels);
+
+      const joints = fingerJointMap[finger];
+      if (!joints) {
         continue;
       }
 
-      bone.rotation[axis] = clampRotation(value);
-      updated += 1;
+      for (const [joint, axis, value] of joints) {
+        const bone = fingerRig[joint];
+        if (!bone) {
+          continue;
+        }
+
+        bone.rotation[axis] = clampRotation(value);
+        updated += 1;
+      }
     }
 
     if (updated === 0) {
@@ -1590,6 +1892,17 @@ function Simulate() {
 
     const handLabel = hand === 'left' ? 'Left' : 'Right';
     const fingerLabel = finger.charAt(0).toUpperCase() + finger.slice(1);
+
+    if (mirrorModeRef.current && hand === 'left') {
+      if (pose === 'close') {
+        const boundedLevel = Math.round(clampToRange(Number(fingerCloseLevels[finger]) || 0, 0, 3));
+        setStatusMessage(`Mirror mode: both ${fingerLabel} fingers closed (Level ${boundedLevel}).`);
+      } else {
+        setStatusMessage(`Mirror mode: both ${fingerLabel} fingers opened.`);
+      }
+      return;
+    }
+
     if (pose === 'close') {
       const boundedLevel = Math.round(clampToRange(Number(fingerCloseLevels[finger]) || 0, 0, 3));
       setStatusMessage(`${handLabel} ${fingerLabel} finger closed (Level ${boundedLevel}).`);
@@ -1979,6 +2292,96 @@ function Simulate() {
             {evalUploadMessage && (
               <div className='simulator-status'>{evalUploadMessage}</div>
             )}
+
+            <label className='label-style mt-2'>Paste Prompt Output</label>
+            <textarea
+              rows={6}
+              value={evalPromptText}
+              onChange={(event) => {
+                setEvalPromptText(event.target.value);
+                if (evalPromptMessage) {
+                  setEvalPromptMessage('');
+                }
+                if (evalPromptError) {
+                  setEvalPromptError('');
+                }
+                if (evalTemplateCopyMessage) {
+                  setEvalTemplateCopyMessage('');
+                }
+                if (evalTemplateCopyError) {
+                  setEvalTemplateCopyError('');
+                }
+              }}
+              placeholder='Paste ChatGPT/Claude output that contains move-list JSON.'
+              className='w-100 input-style simulator-input'
+            />
+            <div className='space-between'>
+              <button
+                className='btn btn-outline-dark btn-style simulator-zoom-btn'
+                onClick={validatePromptJson}
+                disabled={!evalPromptText.trim() || evaluationStatus === 'running'}
+              >
+                Validate Prompt JSON
+              </button>
+              <button
+                className='btn btn-outline-dark btn-style simulator-zoom-btn'
+                onClick={evaluatePromptJson}
+                disabled={!evalPromptText.trim() || evaluationStatus === 'running'}
+              >
+                Evaluate Prompt JSON
+              </button>
+            </div>
+            <button
+              className='btn btn-brown w-100 btn-style'
+              onClick={playPromptPoses}
+              disabled={!evalPromptText.trim() || evaluationStatus === 'running'}
+            >
+              Play Prompt Poses
+            </button>
+
+            <label className='label-style mt-2'>Strict Prompt Template</label>
+            <textarea
+              rows={8}
+              value={STRICT_PROMPT_TEMPLATE}
+              readOnly
+              className='w-100 input-style simulator-input'
+            />
+            <button
+              className='btn btn-outline-dark w-100 btn-style'
+              onClick={copySimulateTemplate}
+              disabled={evaluationStatus === 'running'}
+            >
+              Copy Template (One Click)
+            </button>
+            <div className='space-between'>
+              <button
+                className='btn btn-outline-dark btn-style simulator-zoom-btn'
+                onClick={insertTemplateIntoPrompt}
+                disabled={evaluationStatus === 'running'}
+              >
+                Insert Template
+              </button>
+              <button
+                className='btn btn-outline-dark btn-style simulator-zoom-btn'
+                onClick={clearPromptText}
+                disabled={evaluationStatus === 'running'}
+              >
+                Clear Prompt
+              </button>
+            </div>
+
+            {evalTemplateCopyMessage && (
+              <div className='simulator-status'>{evalTemplateCopyMessage}</div>
+            )}
+            {evalTemplateCopyError && (
+              <div className='simulator-status'>{evalTemplateCopyError}</div>
+            )}
+            {evalPromptMessage && (
+              <div className='simulator-status'>{evalPromptMessage}</div>
+            )}
+            {evalPromptError && (
+              <div className='simulator-status'>{evalPromptError}</div>
+            )}
           </div>
           <div className='form-check mt-2'>
             <input
@@ -2021,6 +2424,24 @@ function Simulate() {
             >
               Right
             </button>
+          </div>
+          <div className='form-check mt-2'>
+            <input
+              id='mirror-left-right-mode'
+              type='checkbox'
+              className='form-check-input'
+              checked={mirrorModeEnabled}
+              onChange={(event) => {
+                const enabled = event.target.checked;
+                setMirrorModeEnabled(enabled);
+                setStatusMessage(enabled
+                  ? 'Mirror mode enabled: left-hand actions now mirror to right hand.'
+                  : 'Mirror mode disabled. Hands can be controlled independently.');
+              }}
+            />
+            <label className='form-check-label normal-text' htmlFor='mirror-left-right-mode'>
+              Mirror Left to Right
+            </label>
           </div>
 
           <label className='label-style'>Move Step: {moveStep.toFixed(2)}</label>
