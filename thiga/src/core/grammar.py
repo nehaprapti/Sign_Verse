@@ -14,8 +14,8 @@ class GrammarEngine:
         """Tokenize and clean text."""
         # Simple tokenization for now
         tokens = text.upper().replace(',', '').replace('.', '').replace('?', '').split()
-        # Remove stop words
-        return [t for t in tokens if t.lower() not in GrammarEngine.STOP_WORDS]
+        # Remove stop words, but KEEP single-letter tokens (likely for fingerspelling)
+        return [t for t in tokens if len(t) == 1 or t.lower() not in GrammarEngine.STOP_WORDS]
 
     @staticmethod
     def reorder(tokens: List[str]) -> List[str]:
