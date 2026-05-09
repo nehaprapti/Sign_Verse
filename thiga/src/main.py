@@ -11,8 +11,7 @@ import numpy as np
 from src.utils.language_utils import detect_and_translate
 from src.core.grammar import GrammarEngine
 from src.core.engine import AnimationEngine
-from src.animations.alphabet import get_alphabet_animation
-from src.animations.word import get_word_animation, WORD_LIST
+from src.utils.validator import SignValidator
 
 # Storage for avatar bones in the 3D scene
 bones_in_scene = {}
@@ -23,75 +22,95 @@ class SignVerseApp:
         self.grammar = GrammarEngine()
         self.avatar_name = 'xbot'
         self.input_text = ""
+        self.avatar_color = '#3b82f6'  # Vibrant Blue
+        self.validator = SignValidator()
+        self.validation_results = []
+
         
     def get_json_animation(self, token):
-        import json
-        import os
-        db_path = 'gestures.json'
-        if not os.path.exists(db_path):
-            return None
+        token = token.upper()
+        # Check Words first, then Letters
+        db = self.validator.db
+        poses = db.get('Word', {}).get(token) or db.get('Letter', {}).get(token)
         
-        try:
-            with open(db_path, 'r') as f:
-                db = json.load(f)
-            
-            token = token.upper()
-            # Check Words first, then Letters
-            poses = db.get('Word', {}).get(token) or db.get('Letter', {}).get(token)
-            
-            if poses:
-                # Convert JSON poses to Engine steps
-                anim_steps = []
-                for pose in poses:
-                    step = []
-                    for bone, rot in pose.items():
-                        for axis in ['x', 'y', 'z']:
+        if poses:
+            # Convert JSON poses to Engine steps
+            anim_steps = []
+            for pose in poses:
+                step = []
+                for bone, rot in pose.items():
+                    # Only use bone names that start with mixamorig
+                    if not bone.startswith('mixamorig'):
+                        continue
+                    for axis in ['x', 'y', 'z']:
+                        if axis in rot:
                             step.append((bone, axis, rot[axis]))
-                    anim_steps.append(step)
-                return anim_steps
-        except: pass
+                anim_steps.append(step)
+            return anim_steps
         return None
 
-    def handle_translation(self, text):
+    def handle_translation(self, text, literal=False):
         if not text or not text.strip():
             ui.notify('Please enter some text', type='warning')
             return
 
-        ui.notify('Processing translation...')
-        result = detect_and_translate(text)
-        translated = result['translated_text']
+        ui.notify('Processing signing...')
+        
+        if literal:
+            translated = text
+            ui.notify(f'Literal mode: signing "{text}" directly')
+        else:
+            result = detect_and_translate(text)
+            translated = result['translated_text']
+            if translated.upper() != text.upper():
+                ui.notify(f'Translated: "{text}" -> "{translated}"')
         
         tokens = self.grammar.preprocess(translated)
         reordered = self.grammar.reorder(tokens)
         
+        # Update validation results for UI
+        self.validation_results = self.validator.validate_text(reordered)
+        self.refresh_validation_ui()
+        
         self.engine.animations = []
         
         for token in reordered:
-            # 1. Try JSON Database first (Custom gestures)
+            # ONLY JSON Database (Custom gestures)
             json_anim = self.get_json_animation(token)
             if json_anim:
                 self.engine.queue_animation(json_anim)
                 self.engine.animations.append([]) # Pause
                 continue
-
-            # 2. Try Hardcoded Words
-            word_anim = get_word_animation(token)
-            if word_anim:
-                self.engine.queue_animation(word_anim)
-                self.engine.animations.append([]) 
-                continue
             
-            # 3. Fallback to fingerspelling
+            # Fallback to fingerspelling
             for char in token:
-                # Try JSON for individual letters first
                 json_char_anim = self.get_json_animation(char)
                 if json_char_anim:
                     self.engine.queue_animation(json_char_anim)
+                    self.engine.animations.append([]) 
                 else:
-                    anim = get_alphabet_animation(char)
-                    if anim:
-                        self.engine.queue_animation(anim)
-                self.engine.animations.append([]) 
+                    # Letter not found, add a small delay anyway or skip
+                    pass
+
+    def refresh_validation_ui(self):
+        if hasattr(self, 'validation_container'):
+            self.validation_container.clear()
+            with self.validation_container:
+                if not self.validation_results:
+                    ui.label('No translation processed yet').classes('text-slate-400 italic')
+                for res in self.validation_results:
+                    with ui.row().classes('items-center gap-2 mb-1 w-full p-2 bg-white rounded border'):
+                        icon = 'check_circle' if res['fully_supported'] else 'help'
+                        color = 'text-green-500' if res['fully_supported'] else 'text-amber-500'
+                        ui.icon(icon).classes(color)
+                        
+                        with ui.column().classes('grow'):
+                            ui.label(res['token']).classes('font-bold')
+                            if res['is_word']:
+                                ui.label('Found as Word').classes('text-[10px] text-green-600 uppercase')
+                            else:
+                                letter_str = " ".join([f"[{l['char']}]" if l['found'] else f"({l['char']}?)" for l in res['letters']])
+                                ui.label(f'Fingerspelling: {letter_str}').classes('text-[10px] text-slate-500')
     
     def update_loop(self):
         """Called every frame to update the 3D scene."""
@@ -211,6 +230,65 @@ def main_page():
         }
         return bones;
     };
+    window.mirrorAvatarSide = (scene_id, from_side, to_side) => {
+        const sceneObj = window['scene_c' + scene_id];
+        if (!sceneObj) return;
+        const model = sceneObj.children.find(c => c.type === "Group");
+        if (!model) return;
+        
+        let skeleton = null;
+        model.traverse(node => {
+            if (node.isSkinnedMesh && node.skeleton) {
+                skeleton = node.skeleton;
+            }
+        });
+
+        if (skeleton) {
+            const bones = skeleton.bones;
+            const fromBones = bones.filter(b => b.name.includes(from_side));
+            fromBones.forEach(fb => {
+                const tbName = fb.name.replace(from_side, to_side);
+                const tb = bones.find(b => b.name === tbName);
+                if (tb) {
+                    // Mirror Y and Z rotations for symmetrical movement
+                    tb.rotation.set(fb.rotation.x, -fb.rotation.y, -fb.rotation.z);
+                }
+            });
+        }
+    };
+    window.setAvatarColor = (scene_id, color_hex) => {
+        const sceneObj = window['scene_c' + scene_id];
+        if (!sceneObj) return false;
+        
+        let meshFound = false;
+        const color = new THREE.Color(color_hex);
+        sceneObj.traverse(node => {
+            if (node.isMesh) {
+                meshFound = true;
+                const materials = Array.isArray(node.material) ? node.material : [node.material];
+                materials.forEach(m => {
+                    if (m.name.toLowerCase().includes('joint')) {
+                        m.color.set('#1a1a2e');
+                    } else {
+                        m.color.set(color);
+                    }
+                    m.roughness = 0.4;
+                    m.metalness = 0.5;
+                    m.needsUpdate = true;
+                });
+            }
+        });
+        return meshFound;
+    };
+    // Auto-apply color on load: retry until model meshes are ready (pure JS, no Python timer)
+    window.autoApplyAvatarColor = (scene_id, color_hex) => {
+        let attempts = 0;
+        const interval = setInterval(() => {
+            attempts++;
+            const ok = window.setAvatarColor(scene_id, color_hex);
+            if (ok || attempts > 60) clearInterval(interval);
+        }, 300);
+    };
     </script>
     ''')
     
@@ -227,10 +305,16 @@ def main_page():
             
             text_input = ui.input('Enter text').classes('w-full mb-4')
             
-            with ui.row().classes('w-full justify-between'):
-                ui.button('Sign it!', on_click=lambda: app_logic.handle_translation(text_input.value)).props('elevated')
-                ui.button('Clear', on_click=lambda: text_input.set_value('')).props('outline')
+            with ui.row().classes('w-full gap-2'):
+                ui.button('Sign it!', on_click=lambda: app_logic.handle_translation(text_input.value)).props('elevated').classes('grow')
+                ui.button('Literal', on_click=lambda: app_logic.handle_translation(text_input.value, literal=True)).props('outline color=secondary').classes('grow')
             
+            ui.button('Clear', on_click=lambda: (text_input.set_value(''), setattr(app_logic, 'validation_results', []), app_logic.refresh_validation_ui())).props('outline').classes('w-full mt-1')
+            
+            ui.label('Translation Validation').classes('text-xs font-bold text-slate-400 uppercase tracking-wider mt-4')
+            app_logic.validation_container = ui.column().classes('w-full mt-1 gap-1')
+            app_logic.refresh_validation_ui()
+
             ui.separator().classes('my-6')
             
             with ui.expansion('Calibration & Tracking', icon='settings').classes('w-full bg-white border rounded-lg shadow-sm'):
@@ -245,7 +329,7 @@ def main_page():
                     ui.number(step=0.01).bind_value(ry_slider).classes('w-20').props('dense outlined')
                 with ui.row().classes('w-full items-center gap-2'):
                     ui.label('AV-RZ:').classes('w-12')
-                    rz_slider = ui.slider(min=-3.14, max=3.14, step=0.01, value=0.18).classes('grow')
+                    rz_slider = ui.slider(min=-3.14, max=3.14, step=0.01, value=0.30).classes('grow')
                     ui.number(step=0.01).bind_value(rz_slider).classes('w-20').props('dense outlined')
                 with ui.row().classes('w-full items-center gap-2'):
                     ui.label('AV-X:').classes('w-12')
@@ -296,22 +380,61 @@ def main_page():
 
                 with ui.row().classes('w-full items-center justify-between mt-2'):
                     selected_side = ui.radio(['Left', 'Right'], value='Right').props('inline')
-                    mirror_mode = ui.checkbox('Mirror Arm').classes('text-sm')
+                    
+                    async def on_mirror_toggle(e):
+                        if e.value:
+                            from_side = selected_side.value
+                            to_side = 'Left' if from_side == 'Right' else 'Right'
+                            ui.run_javascript(f'window.mirrorAvatarSide({scene.id}, "{from_side}", "{to_side}")')
+                            ui.notify(f'Instantly mirrored {from_side} to {to_side}')
+
+                    mirror_mode = ui.checkbox('Mirror Arm', on_change=on_mirror_toggle).classes('text-sm')
                 
                 with ui.row().classes('w-full items-center gap-2 mt-2'):
                     ui.label('Bone:').classes('w-12')
-                    selected_bone = ui.select(['Arm', 'ForeArm', 'Hand', 'HandThumb1', 'HandThumb2', 'HandIndex1', 'HandMiddle1', 'HandRing1', 'HandPinky1'], value='Arm').classes('grow')
+                    selected_bone = ui.select([
+                        'Arm', 'ForeArm', 'Hand', 
+                        'HandThumb1', 'HandThumb2', 'HandThumb3',
+                        'HandIndex1', 'HandIndex2', 'HandIndex3',
+                        'HandMiddle1', 'HandMiddle2', 'HandMiddle3',
+                        'HandRing1', 'HandRing2', 'HandRing3',
+                        'HandPinky1', 'HandPinky2', 'HandPinky3'
+                    ], value='Arm').classes('grow')
                 
+                if not hasattr(app_logic, 'bone_rotations'):
+                    app_logic.bone_rotations = {}
+
                 def update_bone_sim():
                     side = selected_side.value
-                    bone = f'mixamorig{side}{selected_bone.value}'
-                    ui.run_javascript(f'window.updateBoneRotation({scene.id}, "{bone}", {sim_rx.value}, {sim_ry.value}, {sim_rz.value})')
+                    bone_suffix = selected_bone.value
+                    bone = f'mixamorig{side}{bone_suffix}'
+                    rx, ry, rz = sim_rx.value, sim_ry.value, sim_rz.value
+                    
+                    # Store values
+                    app_logic.bone_rotations[bone] = [rx, ry, rz]
+                    
+                    ui.run_javascript(f'window.updateBoneRotation({scene.id}, "{bone}", {rx}, {ry}, {rz})')
                     
                     if mirror_mode.value:
                         other_side = 'Left' if side == 'Right' else 'Right'
-                        other_bone = f'mixamorig{other_side}{selected_bone.value}'
-                        # Mirror Y and Z rotations for symmetrical movement
-                        ui.run_javascript(f'window.updateBoneRotation({scene.id}, "{other_bone}", {sim_rx.value}, {-sim_ry.value}, {-sim_rz.value})')
+                        other_bone = f'mixamorig{other_side}{bone_suffix}'
+                        # Mirror Y and Z rotations
+                        m_ry, m_rz = -ry, -rz
+                        app_logic.bone_rotations[other_bone] = [rx, m_ry, m_rz]
+                        ui.run_javascript(f'window.updateBoneRotation({scene.id}, "{other_bone}", {rx}, {m_ry}, {m_rz})')
+
+                def on_selection_change():
+                    side = selected_side.value
+                    bone = f'mixamorig{side}{selected_bone.value}'
+                    # Default rotations to 0.0 unless stored
+                    rots = app_logic.bone_rotations.get(bone, [0.0, 0.0, 0.0])
+                    # Update sliders (this will trigger update_bone_sim once, which is fine)
+                    sim_rx.set_value(rots[0])
+                    sim_ry.set_value(rots[1])
+                    sim_rz.set_value(rots[2])
+
+                selected_bone.on_value_change(on_selection_change)
+                selected_side.on_value_change(on_selection_change)
 
                 with ui.row().classes('w-full items-center gap-2'):
                     ui.label('RX:').classes('w-8')
@@ -323,23 +446,79 @@ def main_page():
                     ui.label('RZ:').classes('w-8')
                     sim_rz = ui.slider(min=-3.14, max=3.14, step=0.01, value=0.0).classes('grow').on_value_change(update_bone_sim)
 
+                def close_fingers(finger_name, close=True):
+                    side = selected_side.value
+                    angle = 1.4 if close else 0.0
+                    
+                    fingers = {
+                        'Index': ['HandIndex1', 'HandIndex2', 'HandIndex3'],
+                        'Middle': ['HandMiddle1', 'HandMiddle2', 'HandMiddle3'],
+                        'Ring': ['HandRing1', 'HandRing2', 'HandRing3'],
+                        'Pinky': ['HandPinky1', 'HandPinky2', 'HandPinky3'],
+                        'Thumb': ['HandThumb1', 'HandThumb2', 'HandThumb3']
+                    }
+                    
+                    bones_to_update = []
+                    if finger_name == 'All':
+                        for f_list in fingers.values():
+                            bones_to_update.extend(f_list)
+                    else:
+                        bones_to_update = fingers.get(finger_name, [])
+                        
+                    for b in bones_to_update:
+                        bone_full = f'mixamorig{side}{b}'
+                        rx, ry, rz = 0, 0, 0
+                        if 'Thumb' in b:
+                            # Thumb Y rotation for closure
+                            ry = -angle if side == 'Right' else angle
+                        else:
+                            # Other fingers Z rotation for closure
+                            rz = angle if side == 'Right' else -angle
+                        
+                        # Store values
+                        app_logic.bone_rotations[bone_full] = [rx, ry, rz]
+                        ui.run_javascript(f'window.updateBoneRotation({scene.id}, "{bone_full}", {rx}, {ry}, {rz})')
+                    
+                    # Update sliders if the current selected bone was affected
+                    on_selection_change()
+                    ui.notify(f'{"Closed" if close else "Opened"} {finger_name} fingers on {side} hand')
+
+                ui.label('Finger Quick Actions').classes('text-xs font-bold text-slate-400 uppercase tracking-wider mt-4')
+                with ui.row().classes('w-full flex-wrap gap-1'):
+                    ui.button('Close All', on_click=lambda: close_fingers('All')).props('small outline color=primary')
+                    ui.button('Open All', on_click=lambda: close_fingers('All', False)).props('small outline color=grey')
+                
+                with ui.row().classes('w-full flex-wrap gap-1 mt-1'):
+                    for f in ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky']:
+                        ui.button(f, on_click=lambda f=f: close_fingers(f)).props('small outline')
+
                 ui.separator().classes('my-4')
                 
-                ui.label('Live Points Monitor').classes('text-xs font-bold text-slate-400 uppercase tracking-wider')
-                sim_live_monitor = ui.label('Select a bone to see points...').classes('text-xs font-mono bg-slate-50 p-2 rounded w-full')
+                ui.label('Live Points Monitor (Selected Side)').classes('text-xs font-bold text-slate-400 uppercase tracking-wider')
+                with ui.scroll_area().classes('w-full h-64 border rounded p-2 bg-slate-50'):
+                    sim_live_monitor = ui.label('Select a bone to see points...').classes('text-xs font-mono whitespace-pre')
 
                 async def refresh_sim_monitor():
                     try:
-                        bone_name = f'mixamorig{selected_side.value}{selected_bone.value}'
-                        data = await ui.run_javascript(f'window.getBoneRotation({scene.id}, "{bone_name}")', timeout=0.5)
-                        cam = await scene.get_camera()
+                        side = selected_side.value
+                        data = await ui.run_javascript(f'window.captureCurrentPose({scene.id})', timeout=1.0)
                         
-                        bone_str = f"{bone_name}: RX:{data['x']:.3f} RY:{data['y']:.3f} RZ:{data['z']:.3f}" if data else "Bone not found"
-                        cam_str = f"CAM-Y: {cam['position']['y']:.2f} | CAM-Z: {cam['position']['z']:.2f}" if cam else ""
-                        
-                        sim_live_monitor.set_text(f"{bone_str}\n{cam_str}")
+                        if data:
+                            lines = []
+                            # Filter and sort bones for the selected side
+                            side_bones = {k: v for k, v in data.items() if side in k}
+                            # Group bones for better readability
+                            for group in ['Arm', 'ForeArm', 'Hand', 'Thumb', 'Index', 'Middle', 'Ring', 'Pinky']:
+                                group_bones = {k: v for k, v in side_bones.items() if group in k}
+                                if group_bones:
+                                    lines.append(f"--- {group} ---")
+                                    for b_name, rot in sorted(group_bones.items()):
+                                        # Show only name after 'mixamorig' and side
+                                        display_name = b_name.replace(f'mixamorig{side}', '')
+                                        lines.append(f"{display_name:10} | X:{rot['x']:6.3f} Y:{rot['y']:6.3f} Z:{rot['z']:6.3f}")
+                            
+                            sim_live_monitor.set_text("\n".join(lines))
                     except Exception:
-                        # Ignore timeouts in background monitor to prevent UI spam
                         pass
                 
                 ui.timer(0.5, refresh_sim_monitor)
@@ -348,7 +527,8 @@ def main_page():
 
                 ui.label('Pose Sequencer').classes('text-xs font-bold text-slate-400 uppercase tracking-wider')
                 marked_poses_label = ui.label('No poses marked yet.').classes('text-sm italic text-slate-500 mb-1')
-                marked_list_container = ui.row().classes('w-full flex-wrap gap-1 mb-2')
+                with ui.scroll_area().classes('w-full h-48 border rounded bg-white mb-2'):
+                    marked_list_container = ui.column().classes('w-full p-2 gap-1')
                 
                 if not hasattr(app_logic, 'marked_poses'):
                     app_logic.marked_poses = []
@@ -356,18 +536,76 @@ def main_page():
 
                 def update_marked_ui():
                     marked_list_container.clear()
-                    with marked_list_container:
-                        for i, _ in enumerate(app_logic.marked_poses):
-                            ui.badge(f'Pose {i+1}', color='blue').classes('text-[10px] px-2 py-1')
+                    if not app_logic.marked_poses:
+                        marked_poses_label.set_text('No poses marked yet.')
+                        return
+                    
                     marked_poses_label.set_text(f'{len(app_logic.marked_poses)} poses marked')
+                    with marked_list_container:
+                        with ui.column().classes('w-full gap-1'):
+                            for i, pose in enumerate(app_logic.marked_poses):
+                                with ui.row().classes('w-full items-center gap-2 p-1 bg-slate-50 rounded border border-slate-200 hover:bg-slate-100 transition-colors'):
+                                    ui.label(f'{i+1}').classes('font-bold text-slate-400 w-4')
+                                    ui.badge(f'Pose {i+1}', color='blue').classes('grow text-xs cursor-pointer').on('click', lambda i=i: load_pose(i))
+                                    
+                                    with ui.row().classes('gap-1'):
+                                        # Move Up
+                                        ui.button(icon='arrow_upward', on_click=lambda i=i: move_pose(i, -1)).props('flat dense size=sm').classes('text-slate-500').set_visibility(i > 0)
+                                        # Move Down
+                                        ui.button(icon='arrow_downward', on_click=lambda i=i: move_pose(i, 1)).props('flat dense size=sm').classes('text-slate-500').set_visibility(i < len(app_logic.marked_poses) - 1)
+                                        # Load/Edit
+                                        ui.button(icon='edit', on_click=lambda i=i: load_pose(i)).props('flat dense size=sm color=primary').classes('ml-2')
+                                        # Update current index
+                                        ui.button(icon='save', on_click=lambda i=i: update_pose_at(i)).props('flat dense size=sm color=green')
+                                        # Delete
+                                        ui.button(icon='delete', on_click=lambda i=i: delete_pose(i)).props('flat dense size=sm color=red')
+
+                async def load_pose(index):
+                    if 0 <= index < len(app_logic.marked_poses):
+                        pose_data = app_logic.marked_poses[index]
+                        ui.notify(f'Loading Pose {index+1}...')
+                        
+                        # Apply bone rotations to the scene
+                        for bone, rot in pose_data.items():
+                            ui.run_javascript(f'window.updateBoneRotation({scene.id}, "{bone}", {rot["x"]}, {rot["y"]}, {rot["z"]})')
+                            # Also update internal storage so sliders can pick it up
+                            app_logic.bone_rotations[bone] = [rot['x'], rot['y'], rot['z']]
+                        
+                        # Update sliders for the currently selected bone
+                        on_selection_change()
+                    else:
+                        ui.notify('Invalid pose index', type='negative')
+
+                def delete_pose(index):
+                    if 0 <= index < len(app_logic.marked_poses):
+                        app_logic.marked_poses.pop(index)
+                        ui.notify(f'Pose {index+1} deleted')
+                        update_marked_ui()
+
+                def move_pose(index, direction):
+                    new_index = index + direction
+                    if 0 <= new_index < len(app_logic.marked_poses):
+                        app_logic.marked_poses[index], app_logic.marked_poses[new_index] = \
+                            app_logic.marked_poses[new_index], app_logic.marked_poses[index]
+                        update_marked_ui()
+
+                async def update_pose_at(index):
+                    try:
+                        data = await ui.run_javascript(f'window.captureCurrentPose({scene.id})', timeout=5.0)
+                        if data:
+                            app_logic.marked_poses[index] = data
+                            ui.notify(f'Pose {index+1} updated with current avatar state!')
+                            update_marked_ui()
+                    except Exception as e:
+                        ui.notify(f'Failed to update pose: {str(e)}', type='negative')
 
                 async def mark_pose():
                     try:
                         data = await ui.run_javascript(f'window.captureCurrentPose({scene.id})', timeout=5.0)
                         if data:
                             app_logic.marked_poses.append(data)
-                            update_marked_ui()
                             ui.notify(f'Pose {len(app_logic.marked_poses)} marked!')
+                            update_marked_ui()
                     except Exception as e:
                         ui.notify(f'Failed to mark pose: {str(e)}', type='negative')
 
@@ -392,8 +630,8 @@ def main_page():
                     
                 def clear_marked():
                     app_logic.marked_poses = []
-                    update_marked_ui()
                     ui.notify('Sequence cleared')
+                    update_marked_ui()
 
                 import json
                 import os
@@ -423,6 +661,7 @@ def main_page():
                     with open(db_path, 'w') as f:
                         json.dump(db, f, indent=4)
                     
+                    app_logic.validator.load_db() # Reload validator DB
                     ui.notify(f'Saved {name} to {db_path}!')
 
                 with ui.row().classes('w-full gap-2 mt-2'):
@@ -438,18 +677,41 @@ def main_page():
                     loop_btn.props(f'color={"primary" if app_logic.loop_enabled else "grey"}')
                     ui.notify(f'Looping {"ON" if app_logic.loop_enabled else "OFF"}')
 
-                ui.button('Save to JSON Database', on_click=save_to_db).classes('w-full mt-2').props('icon=save color=secondary')
+                def load_from_db():
+                    db_path = 'gestures.json'
+                    if not os.path.exists(db_path):
+                        ui.notify('Database not found', type='warning')
+                        return
+                    
+                    try:
+                        with open(db_path, 'r') as f:
+                            db = json.load(f)
+                    except:
+                        ui.notify('Error reading database', type='negative')
+                        return
+                    
+                    cat = sim_cat.value
+                    name = sim_name.value.upper()
+                    
+                    if cat in db and name in db[cat]:
+                        app_logic.marked_poses = list(db[cat][name])
+                        ui.notify(f'Loaded {name} sequence from DB!')
+                        update_marked_ui()
+                    else:
+                        ui.notify(f'{name} not found in {cat}', type='warning')
+
+                with ui.row().classes('w-full gap-2 mt-2'):
+                    ui.button('Save to DB', on_click=save_to_db).classes('grow').props('icon=save color=secondary')
+                    ui.button('Load from DB', on_click=load_from_db).classes('grow').props('icon=download outline color=secondary')
 
                 ui.separator().classes('my-4')
                 
                 ui.label('Shortcuts').classes('text-xs font-bold text-slate-400 uppercase tracking-wider')
                 
                 def attention_pose():
-                    # Reset Stimulator Sliders ONLY
-                    # We do not touch Camera or Avatar Calibration to preserve the user's view
-                    sim_rx.value = 0.0
-                    sim_ry.value = 0.0
-                    sim_rz.value = 0.0
+                    # Reset Stimulator Sliders AND Storage
+                    app_logic.bone_rotations = {}
+                    on_selection_change() # Resets UI sliders to 0.0
                     
                     # Apply the bone reset
                     ui.run_javascript(f'''
@@ -501,47 +763,63 @@ def main_page():
             ui.label('Settings').classes('text-lg font-medium')
             ui.slider(min=0.01, max=0.5, value=0.05).on_value_change(lambda e: setattr(app_logic.engine, 'speed', e.value))
             ui.label('Animation Speed').classes('text-sm text-slate-500')
+            
+            ui.separator().classes('my-4')
+            ui.label('Appearance').classes('text-lg font-medium mb-2')
+            with ui.row().classes('items-center gap-4'):
+                ui.label('Avatar Color:').classes('text-sm')
+                color_picker = ui.color_input(value=app_logic.avatar_color, on_change=lambda e: (setattr(app_logic, 'avatar_color', e.value), update_scene()))
+                color_picker.props('inline')
 
         # Right Panel: 3D Scene
         with ui.column().classes('flex-grow h-full bg-white rounded-xl shadow-inner relative overflow-hidden'):
             with ui.scene(width=None, height=None, grid=False).classes('w-full h-full') as scene:
                 scene.move_camera(0, 1.01, 1.35, 0, 1.01, 0)
                 model = scene.gltf('/assets/models/xbot.glb')
-                model.rotate(0.11, 0.07, 0.18)
+                model.rotate(0.11, 0.07, 0.30)
                 model.move(0.28, -0.19, 0)
                 scene.spot_light(color='#ffffff', intensity=10).move(2, 5, 2)
                 app_logic.scene = scene
 
         def update_scene():
             ui.run_javascript(f'if (window.updateModelPose) window.updateModelPose({scene.id}, {rx_slider.value}, {ry_slider.value}, {rz_slider.value}, {avx_slider.value}, {avy_slider.value});')
+            ui.run_javascript(f'if (window.setAvatarColor) window.setAvatarColor({scene.id}, "{app_logic.avatar_color}");')
             # Use duration=0 for instant snap, preventing camera interpolation glitches
             scene.move_camera(0, camy_slider.value, camz_slider.value, 0, camy_slider.value, 0, duration=0)
         
         for s in [rx_slider, ry_slider, rz_slider, avx_slider, avy_slider, camy_slider, camz_slider]:
             s.on_value_change(update_scene)
 
-        # Apply initial pose after a short delay to ensure scene/model are ready
-        ui.timer(0.2, update_scene, once=True)
+        # Apply initial pose via JS-side auto-color retry loop (avoids Python timer context errors on reload)
+        ui.run_javascript(f'window.autoApplyAvatarColor({scene.id}, "{app_logic.avatar_color}");')
 
         # Keyboard Shortcuts for Stimulator
         from nicegui import events
-        def handle_key(e: events.KeyEventArguments):
+        async def handle_key(e: events.KeyEventArguments):
             if e.action.keydown:
+                # Check if we are typing in an input or textarea to avoid accidental triggers
+                is_typing = await ui.run_javascript('["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)')
+                if is_typing:
+                    return
+
                 step = 0.05
-                # Only trigger if not typing in an input field
-                if e.key == 'm' or e.key == 'M': mark_pose()
-                elif e.key == 'a' or e.key == 'A': attention_pose()
-                elif e.key == 'p' or e.key == 'P': play_sequence()
-                elif e.key == 's' or e.key == 'S': save_to_db()
-                elif e.key == 'c' or e.key == 'C': clear_marked()
+                # Extract key name whether e.key is a string or a KeyboardKey object
+                k_orig = e.key.name if hasattr(e.key, 'name') else str(e.key)
+                k = k_orig.lower()
+                
+                if k == 'm': await mark_pose()
+                elif k == 'a': attention_pose()
+                elif k == 'p': play_sequence()
+                elif k == 's': save_to_db()
+                elif k == 'c': clear_marked()
                 
                 # Rotation Controls
-                elif e.key.arrow_up: sim_rx.value = min(3.14, sim_rx.value + step)
-                elif e.key.arrow_down: sim_rx.value = max(-3.14, sim_rx.value - step)
-                elif e.key.arrow_right: sim_ry.value = min(3.14, sim_ry.value + step)
-                elif e.key.arrow_left: sim_ry.value = max(-3.14, sim_ry.value - step)
-                elif e.key == '[': sim_rz.value = max(-3.14, sim_rz.value - step)
-                elif e.key == ']': sim_rz.value = min(3.14, sim_rz.value + step)
+                elif k == 'arrowup': sim_rx.value = min(3.14, sim_rx.value + step)
+                elif k == 'arrowdown': sim_rx.value = max(-3.14, sim_rx.value - step)
+                elif k == 'arrowright': sim_ry.value = min(3.14, sim_ry.value + step)
+                elif k == 'arrowleft': sim_ry.value = max(-3.14, sim_ry.value - step)
+                elif k == '[': sim_rz.value = max(-3.14, sim_rz.value - step)
+                elif k == ']': sim_rz.value = min(3.14, sim_rz.value + step)
 
         ui.keyboard(on_key=handle_key)
 

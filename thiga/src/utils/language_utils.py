@@ -32,6 +32,14 @@ def detect_and_translate(text: str) -> Dict[str, Any]:
 
     unicode_detection = detect_language_from_unicode(text)
     
+    # If already English, skip API call to save time and prevent mangling
+    if unicode_detection['detectedLang'] == 'en':
+        return {
+            'translated_text': text,
+            'detectedLang': 'en',
+            'detectedLangName': 'English'
+        }
+    
     try:
         url = f"https://api.mymemory.translated.net/get?q={requests.utils.quote(text)}&langpair=autodetect|en"
         response = requests.get(url)
