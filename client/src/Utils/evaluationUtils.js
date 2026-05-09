@@ -59,12 +59,22 @@ export const compareRotation = (expected, actual) => {
     return null;
   }
 
-  const safeExpected = expected || { x: 0, y: 0, z: 0 };
-  const safeActual = actual || { x: 0, y: 0, z: 0 };
+  // If one is missing but not both, we have a significant error (e.g. missing rig part)
+  if (!expected || !actual) {
+    const penalty = 30; // 30 degrees penalty for missing joints
+    return {
+      x: penalty,
+      y: penalty,
+      z: penalty,
+      maxAxis: penalty,
+      avgAxis: penalty,
+      isMissing: true,
+    };
+  }
 
-  const dx = normalizeAngleDeltaDeg(safeExpected.x, safeActual.x);
-  const dy = normalizeAngleDeltaDeg(safeExpected.y, safeActual.y);
-  const dz = normalizeAngleDeltaDeg(safeExpected.z, safeActual.z);
+  const dx = normalizeAngleDeltaDeg(expected.x, actual.x);
+  const dy = normalizeAngleDeltaDeg(expected.y, actual.y);
+  const dz = normalizeAngleDeltaDeg(expected.z, actual.z);
 
   return {
     x: dx,

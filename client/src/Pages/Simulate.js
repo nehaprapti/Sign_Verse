@@ -207,6 +207,7 @@ function Simulate() {
   const [evalTemplateCopyMessage, setEvalTemplateCopyMessage] = useState('');
   const [evalTemplateCopyError, setEvalTemplateCopyError] = useState('');
   const [currentEvalPoseIndex, setCurrentEvalPoseIndex] = useState(-1); // which pose is being shown
+  const [showCorrectSignOverlay, setShowCorrectSignOverlay] = useState(false);
 
   const selectedHandRef = useRef('left');
   const mirrorModeRef = useRef(false);
@@ -1205,6 +1206,10 @@ function Simulate() {
         setEvaluationPassed(true);
         setEvaluatedPayload(payload);
         setStatusMessage(`Evaluation passed! All ${summary.totalPoses} poses verified. You can now save.`);
+        
+        // Trigger the big overlay
+        setShowCorrectSignOverlay(true);
+        setTimeout(() => setShowCorrectSignOverlay(false), 3000);
       } else {
         setEvaluationStatus('failed');
         setEvaluationPassed(false);
@@ -2711,6 +2716,17 @@ function Simulate() {
           </div>
         </div>
       </div>
+
+      {/* Prominent Correct Sign Overlay */}
+      {showCorrectSignOverlay && (
+        <div className="correct-sign-overlay">
+          <div className="correct-sign-content">
+            <span className="correct-sign-icon">✅</span>
+            <h2 className="correct-sign-text">Correct Sign!</h2>
+            <p className="correct-sign-subtext">Word: {wordName.toUpperCase()}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

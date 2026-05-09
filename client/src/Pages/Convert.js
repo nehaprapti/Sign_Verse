@@ -151,62 +151,55 @@ const setBoneRotation = (bone, x = 0, y = 0, z = 0) => {
   bone.rotation.set(x, y, z);
 };
 
-const getArmBoneCandidates = (side) => ({
-  arm: [`mixamorig${side}Arm`, `${side}Arm`],
-  forearm: [`mixamorig${side}ForeArm`, `${side}ForeArm`],
-  hand: [`mixamorig${side}Hand`, `${side}Hand`],
-});
+const getFingerBoneNameCandidates = (hand, joint) => {
+  const side = hand === 'left' ? 'Left' : 'Right';
+  const map = {
+    index1: [`mixamorig${side}HandIndex1`, `${side}HandIndex1`],
+    index2: [`mixamorig${side}HandIndex2`, `${side}HandIndex2`],
+    index3: [`mixamorig${side}HandIndex3`, `${side}HandIndex3`],
+    middle1: [`mixamorig${side}HandMiddle1`, `${side}HandMiddle1`],
+    middle2: [`mixamorig${side}HandMiddle2`, `${side}HandMiddle2`],
+    middle3: [`mixamorig${side}HandMiddle3`, `${side}HandMiddle3`],
+    ring1: [`mixamorig${side}HandRing1`, `${side}HandRing1`],
+    ring2: [`mixamorig${side}HandRing2`, `${side}HandRing2`],
+    ring3: [`mixamorig${side}HandRing3`, `${side}HandRing3`],
+    pinky1: [`mixamorig${side}HandPinky1`, `${side}HandPinky1`],
+    pinky2: [`mixamorig${side}HandPinky2`, `${side}HandPinky2`],
+    pinky3: [`mixamorig${side}HandPinky3`, `${side}HandPinky3`],
+    thumb1: [`mixamorig${side}HandThumb1`, `${side}HandThumb1`],
+    thumb2: [`mixamorig${side}HandThumb2`, `${side}HandThumb2`],
+  };
+  return map[joint] || [];
+};
 
-const getFingerBoneCandidates = (side) => ({
-  thumb1: [`mixamorig${side}HandThumb1`, `${side}HandThumb1`],
-  thumb2: [`mixamorig${side}HandThumb2`, `${side}HandThumb2`],
-  index1: [`mixamorig${side}HandIndex1`, `${side}HandIndex1`],
-  index2: [`mixamorig${side}HandIndex2`, `${side}HandIndex2`],
-  index3: [`mixamorig${side}HandIndex3`, `${side}HandIndex3`],
-  middle1: [`mixamorig${side}HandMiddle1`, `${side}HandMiddle1`],
-  middle2: [`mixamorig${side}HandMiddle2`, `${side}HandMiddle2`],
-  middle3: [`mixamorig${side}HandMiddle3`, `${side}HandMiddle3`],
-  ring1: [`mixamorig${side}HandRing1`, `${side}HandRing1`],
-  ring2: [`mixamorig${side}HandRing2`, `${side}HandRing2`],
-  ring3: [`mixamorig${side}HandRing3`, `${side}HandRing3`],
-  pinky1: [`mixamorig${side}HandPinky1`, `${side}HandPinky1`],
-  pinky2: [`mixamorig${side}HandPinky2`, `${side}HandPinky2`],
-  pinky3: [`mixamorig${side}HandPinky3`, `${side}HandPinky3`],
-});
+const getArmBoneNameCandidates = (hand, part) => {
+  const side = hand === 'left' ? 'Left' : 'Right';
+  if (part === 'arm') return [`mixamorig${side}Arm`, `${side}Arm`];
+  if (part === 'forearm') return [`mixamorig${side}ForeArm`, `${side}ForeArm`];
+  if (part === 'hand') return [`mixamorig${side}Hand`, `${side}Hand`];
+  return [];
+};
 
-const resolveBoneName = (avatar, candidates) => {
-  if (!avatar || !candidates) {
-    return null;
+const findBone = (avatar, candidates) => {
+  if (!avatar || !candidates) return null;
+  for (const name of candidates) {
+    const bone = avatar.getObjectByName(name);
+    if (bone) return bone;
   }
-
-  for (const candidate of candidates) {
-    if (avatar.getObjectByName(candidate)) {
-      return candidate;
-    }
-  }
-
   return null;
 };
 
-const addRotationSteps = (animation, boneName, currentRotation, targetRotation) => {
-  if (!boneName || !targetRotation) {
+const addRotationSteps = (ref, animation, hand, part, joint, targetValue, boneName, axis) => {
+  const bone = ref.avatar.getObjectByName(boneName);
+  if (!bone) return;
+  
+  const currentValue = bone.rotation[axis];
+  const delta = targetValue - currentValue;
+  if (Math.abs(delta) <= EPSILON) {
     return;
   }
 
-  for (const axis of AXES) {
-    const currentValue = currentRotation?.[axis] ?? 0;
-    const targetValue = targetRotation?.[axis];
-    if (typeof targetValue !== 'number') {
-      continue;
-    }
-
-    const delta = targetValue - currentValue;
-    if (Math.abs(delta) <= EPSILON) {
-      continue;
-    }
-
-    animation.push([boneName, 'rotation', axis, targetValue, delta > 0 ? '+' : '-']);
-  }
+  animation.push([boneName, 'rotation', axis, targetValue, delta > 0 ? '+' : '-']);
 };
 
 const queuePoseSnapshotAnimation = (ref, snapshot) => {
@@ -216,54 +209,46 @@ const queuePoseSnapshotAnimation = (ref, snapshot) => {
 
   const animation = [];
   const sideConfig = [
-    { key: 'leftHand', side: 'Left' },
-    { key: 'rightHand', side: 'Right' },
+    { key: 'leftHand', side: 'left' },
+    { key: 'rightHand', side: 'right' },
   ];
 
   for (const config of sideConfig) {
     const handSnapshot = snapshot[config.key];
+    const hand = config.side;
     if (!handSnapshot) {
       continue;
     }
 
-    const armCandidates = getArmBoneCandidates(config.side);
-    const fingerCandidates = getFingerBoneCandidates(config.side);
-
-    const armBoneName = resolveBoneName(ref.avatar, armCandidates.arm);
-    const forearmBoneName = resolveBoneName(ref.avatar, armCandidates.forearm);
-    const handBoneName = resolveBoneName(ref.avatar, armCandidates.hand);
-
-    addRotationSteps(
-      animation,
-      armBoneName,
-      ref.avatar.getObjectByName(armBoneName)?.rotation,
-      handSnapshot.arm,
-    );
-    addRotationSteps(
-      animation,
-      forearmBoneName,
-      ref.avatar.getObjectByName(forearmBoneName)?.rotation,
-      handSnapshot.forearm,
-    );
-    addRotationSteps(
-      animation,
-      handBoneName,
-      ref.avatar.getObjectByName(handBoneName)?.rotation,
-      handSnapshot.hand,
-    );
-
-    for (const [jointName, targetRotation] of Object.entries(handSnapshot.fingers || {})) {
-      const fingerBoneName = resolveBoneName(ref.avatar, fingerCandidates[jointName]);
-      if (!fingerBoneName) {
+    // Compare arm, forearm, hand
+    for (const part of ['arm', 'forearm', 'hand']) {
+      const candidates = getArmBoneNameCandidates(hand, part);
+      const bone = findBone(ref.avatar, candidates);
+      if (!bone) {
         continue;
       }
+      const boneName = bone.name;
+      const target = handSnapshot[part];
+      if (target) {
+        addRotationSteps(ref, animation, hand, part, null, target.x, boneName, 'x');
+        addRotationSteps(ref, animation, hand, part, null, target.y, boneName, 'y');
+        addRotationSteps(ref, animation, hand, part, null, target.z, boneName, 'z');
+      }
+    }
 
-      addRotationSteps(
-        animation,
-        fingerBoneName,
-        ref.avatar.getObjectByName(fingerBoneName)?.rotation,
-        targetRotation,
-      );
+    // Compare fingers
+    for (const [joint, targetRotation] of Object.entries(handSnapshot.fingers || {})) {
+      const candidates = getFingerBoneNameCandidates(hand, joint);
+      const bone = findBone(ref.avatar, candidates);
+      if (!bone) {
+        continue;
+      }
+      const boneName = bone.name;
+      if (targetRotation) {
+        addRotationSteps(ref, animation, hand, null, joint, targetRotation.x, boneName, 'x');
+        addRotationSteps(ref, animation, hand, null, joint, targetRotation.y, boneName, 'y');
+        addRotationSteps(ref, animation, hand, null, joint, targetRotation.z, boneName, 'z');
+      }
     }
   }
 
@@ -389,6 +374,7 @@ function Convert() {
   const [movelistImportError, setMovelistImportError] = useState("");
   const [templateCopyMessage, setTemplateCopyMessage] = useState('');
   const [templateCopyError, setTemplateCopyError] = useState('');
+  const [showCorrectOverlay, setShowCorrectOverlay] = useState(false);
 
   const componentRef = useRef({});
   const { current: ref } = componentRef;
@@ -411,32 +397,42 @@ function Convert() {
     ref.pending = false;
     ref.flag = false;
 
-    const leftArm = resolveBoneName(ref.avatar, getArmBoneCandidates('Left').arm);
-    const leftForeArm = resolveBoneName(ref.avatar, getArmBoneCandidates('Left').forearm);
-    const leftHand = resolveBoneName(ref.avatar, getArmBoneCandidates('Left').hand);
-    const rightArm = resolveBoneName(ref.avatar, getArmBoneCandidates('Right').arm);
-    const rightForeArm = resolveBoneName(ref.avatar, getArmBoneCandidates('Right').forearm);
-    const rightHand = resolveBoneName(ref.avatar, getArmBoneCandidates('Right').hand);
+    const findAndSetRotation = (hand, part, x, y, z) => {
+      const candidates = getArmBoneNameCandidates(hand, part);
+      const bone = findBone(ref.avatar, candidates);
+      if (bone) {
+        setBoneRotation(bone, x, y, z);
+      }
+    };
 
     setBoneRotation(ref.avatar.getObjectByName('mixamorigNeck') || ref.avatar.getObjectByName('Neck'), Math.PI / 12, 0, 0);
-    setBoneRotation(ref.avatar.getObjectByName(leftArm), 0, 0, -Math.PI / 3);
-    setBoneRotation(ref.avatar.getObjectByName(leftForeArm), 0, -Math.PI / 1.5, 0);
-    setBoneRotation(ref.avatar.getObjectByName(leftHand), 0, 0, 0);
+    
+    findAndSetRotation('left', 'arm', 0, 0, -Math.PI / 3);
+    findAndSetRotation('left', 'forearm', 0, -Math.PI / 1.5, 0);
+    findAndSetRotation('left', 'hand', 0, 0, 0);
 
-    setBoneRotation(ref.avatar.getObjectByName(rightArm), 0, 0, Math.PI / 3);
-    setBoneRotation(ref.avatar.getObjectByName(rightForeArm), 0, Math.PI / 1.5, 0);
-    setBoneRotation(ref.avatar.getObjectByName(rightHand), 0, 0, 0);
+    findAndSetRotation('right', 'arm', 0, 0, Math.PI / 3);
+    findAndSetRotation('right', 'forearm', 0, Math.PI / 1.5, 0);
+    findAndSetRotation('right', 'hand', 0, 0, 0);
 
-    const resetFingers = (side) => {
-      const fingerCandidates = getFingerBoneCandidates(side);
-      Object.values(fingerCandidates).forEach((candidateList) => {
-        const boneName = resolveBoneName(ref.avatar, candidateList);
-        setBoneRotation(ref.avatar.getObjectByName(boneName), 0, 0, 0);
+    const resetFingers = (hand) => {
+      const joints = [
+        'thumb1', 'thumb2', 'index1', 'index2', 'index3',
+        'middle1', 'middle2', 'middle3', 'ring1', 'ring2', 'ring3',
+        'pinky1', 'pinky2', 'pinky3'
+      ];
+      
+      joints.forEach((joint) => {
+        const candidates = getFingerBoneNameCandidates(hand, joint);
+        const bone = findBone(ref.avatar, candidates);
+        if (bone) {
+          setBoneRotation(bone, 0, 0, 0);
+        }
       });
     };
 
-    resetFingers('Left');
-    resetFingers('Right');
+    resetFingers('left');
+    resetFingers('right');
 
     if (ref.renderer && ref.scene && ref.camera) {
       ref.renderer.render(ref.scene, ref.camera);
@@ -499,6 +495,8 @@ function Convert() {
     if (ref.animations.length === 0) {
       ref.pending = false;
       setCurrentWordIndex(0); // Reset index when animations complete
+      setShowCorrectOverlay(true);
+      setTimeout(() => setShowCorrectOverlay(false), 3000);
       return;
     }
     requestAnimationFrame(ref.animate);
@@ -825,6 +823,16 @@ function Convert() {
 
   return (
     <div className='container-fluid page-container-cream'>
+      {showCorrectOverlay && (
+        <div className="correct-sign-overlay">
+          <div className="correct-sign-content">
+            <div className="checkmark-circle">
+              <i className="fa fa-check" />
+            </div>
+            <h1>CORRECT SIGN!</h1>
+          </div>
+        </div>
+      )}
       <div className='row'>
         <div className='col-md-3'>
           {/* Detected Language Display */}
@@ -1123,5 +1131,6 @@ function Convert() {
     </div>
   )
 }
+
 
 export default Convert;
