@@ -1,0 +1,43 @@
+import math
+
+def get_animation():
+    return [
+        [
+            ('mixamorigRightHandIndex1', 'z', math.pi/3),
+            ('mixamorigRightHandMiddle1', 'z', math.pi/3),
+            ('mixamorigRightHandRing1', 'z', math.pi/3),
+            ('mixamorigRightHandPinky1', 'z', math.pi/3),
+            ('mixamorigRightHand', 'z', -math.pi/10),
+            ('mixamorigRightHand', 'y', math.pi/4),
+            ('mixamorigRightForeArm', 'z', math.pi/7),
+            ('mixamorigRightForeArm', 'x', math.pi/18),
+            ('mixamorigRightArm', 'x', -math.pi/6.5),
+            ('mixamorigRightArm', 'z', math.pi/2.7),
+            ('mixamorigLeftHandThumb1', 'x', -math.pi/3),
+            ('mixamorigLeftHand', 'z', math.pi/4),
+            ('mixamorigLeftHand', 'y', -math.pi/9),
+            ('mixamorigLeftForeArm', 'z', -math.pi/6),
+            ('mixamorigLeftForeArm', 'x', math.pi/18),
+            ('mixamorigLeftArm', 'x', -math.pi/5),
+            ('mixamorigLeftArm', 'z', -math.pi/2.7),
+        ],
+        [
+            ('mixamorigRightHandIndex1', 'z', 0),
+            ('mixamorigRightHandMiddle1', 'z', 0),
+            ('mixamorigRightHandRing1', 'z', 0),
+            ('mixamorigRightHandPinky1', 'z', 0),
+            ('mixamorigRightHand', 'z', 0),
+            ('mixamorigRightHand', 'y', 0),
+            ('mixamorigRightForeArm', 'z', 0),
+            ('mixamorigRightForeArm', 'x', 0),
+            ('mixamorigRightArm', 'x', 0),
+            ('mixamorigRightArm', 'z', 1.0471975511965976),
+            ('mixamorigLeftHandThumb1', 'x', 0),
+            ('mixamorigLeftHand', 'z', 0),
+            ('mixamorigLeftHand', 'y', 0),
+            ('mixamorigLeftForeArm', 'z', 0),
+            ('mixamorigLeftForeArm', 'x', 0),
+            ('mixamorigLeftArm', 'x', 0),
+            ('mixamorigLeftArm', 'z', -1.0471975511965976),
+        ],
+    ]
