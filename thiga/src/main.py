@@ -123,6 +123,115 @@ class SignVerseApp:
 
 app.add_static_files('/assets', 'assets')
 
+
+@app.post('/api/gestures')
+async def api_save_gesture(request):
+    """Accept a move-list payload (from client) and persist into gestures.json.
+    Expected payload structure: move (name), category (optional: 'Word'|'Letter'), poses: [{snapshot: {leftHand,rightHand}}]
+    This handler will convert snapshots into bone-name -> {x,y,z} maps similar to the existing stimulator format.
+    """
+    try:
+        payload = await request.json()
+    except Exception as e:
+        return {'ok': False, 'error': f'invalid json: {e}'}
+
+    import json, os
+
+    # Normalize inputs
+    cat = (payload.get('category') or 'Word')
+    name = (payload.get('move') or payload.get('word') or payload.get('name'))
+    if not name:
+        return {'ok': False, 'error': 'missing move/name in payload'}
+
+    name = str(name).upper()
+
+    poses = payload.get('poses') or payload.get('frames') or []
+
+    def convert_pose_snapshot_to_bones(snapshot, side_prefix='Left'):
+        bones = {}
+        if not snapshot:
+            return bones
+
+        # arm, forearm, hand
+        arm = snapshot.get('arm')
+        forearm = snapshot.get('forearm')
+        hand = snapshot.get('hand')
+        if arm:
+            bones[f'mixamorig{side_prefix}Arm'] = { 'x': arm.get('x',0), 'y': arm.get('y',0), 'z': arm.get('z',0) }
+        if forearm:
+            bones[f'mixamorig{side_prefix}ForeArm'] = { 'x': forearm.get('x',0), 'y': forearm.get('y',0), 'z': forearm.get('z',0) }
+        if hand:
+            bones[f'mixamorig{side_prefix}Hand'] = { 'x': hand.get('x',0), 'y': hand.get('y',0), 'z': hand.get('z',0) }
+
+        # fingers: expect keys like thumb1, index1, index2...
+        fingers = snapshot.get('fingers') or {}
+        for joint, rot in fingers.items():
+            # joint like 'index1' -> Bone suffix 'HandIndex1'
+            # Ensure capitalization matches stimulator naming
+            if not isinstance(joint, str):
+                continue
+            # split name into letters and digits
+            import re
+            m = re.match(r'([a-zA-Z]+)(\d+)$', joint)
+            if m:
+                finger_name = m.group(1)
+                number = m.group(2)
+                suffix = f'Hand{finger_name.capitalize()}{number}'
+            else:
+                suffix = f'Hand{joint.capitalize()}'
+
+            bone_name = f'mixamorig{side_prefix}{suffix}'
+            bones[bone_name] = { 'x': rot.get('x',0), 'y': rot.get('y',0), 'z': rot.get('z',0) }
+
+        return bones
+
+    converted_sequence = []
+    for p in poses:
+        # Handle both move-list pose structure (pose.snapshot.leftHand/rightHand)
+        snapshot = p.get('snapshot') if isinstance(p, dict) else None
+        pose_bones = {}
+        if snapshot:
+            left = snapshot.get('leftHand') or {}
+            right = snapshot.get('rightHand') or {}
+            pose_bones.update(convert_pose_snapshot_to_bones(left, 'Left'))
+            pose_bones.update(convert_pose_snapshot_to_bones(right, 'Right'))
+        else:
+            # Might already be in bone map format; accept as-is
+            if isinstance(p, dict):
+                # check if keys look like bone names
+                pose_bones = p
+
+        converted_sequence.append(pose_bones)
+
+    db_path = 'gestures.json'
+    db = {}
+    if os.path.exists(db_path):
+        try:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                db = json.load(f)
+        except Exception:
+            db = {}
+
+    if cat not in db:
+        db[cat] = {}
+
+    db[cat][name] = converted_sequence
+
+    try:
+        with open(db_path, 'w', encoding='utf-8') as f:
+            json.dump(db, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        return {'ok': False, 'error': f'write failed: {e}'}
+
+    # Reload validator DB (so UI reflects new entry)
+    try:
+        app_logic.validator.load_db()
+    except Exception:
+        pass
+
+    return {'ok': True, 'saved': {'category': cat, 'name': name, 'poses': len(converted_sequence)}}
+
+
 @ui.page('/')
 def main_page():
     # Custom JS to handle GLTF bone manipulation

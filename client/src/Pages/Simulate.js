@@ -1151,6 +1151,32 @@ function Simulate() {
       console.error('Unable to persist move list in localStorage:', error);
       setStatusMessage(`Saved move list JSON with ${normalizedPayload.poses.length} poses for "${normalizedWord}" (browser save unavailable).`);
     }
+
+    // Try to persist to backend gestures DB (if available)
+    (async () => {
+      try {
+        const resp = await fetch('/api/gestures', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ move: normalizedWord, category: 'Word', poses: normalizedPayload.poses }),
+        });
+
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result && result.ok) {
+            setStatusMessage((s) => `${s} Also saved to server DB as ${result.saved.name} (${result.saved.poses} poses).`);
+          } else {
+            setStatusMessage((s) => `${s} Server save failed: ${result && result.error ? result.error : 'unknown'}`);
+          }
+        } else {
+          const text = await resp.text();
+          setStatusMessage((s) => `${s} Server save failed: ${text}`);
+        }
+      } catch (err) {
+        // Backend may not be running or CORS blocked; don't treat as fatal
+        console.debug('Server save skipped:', err.message || err);
+      }
+    })();
   }, []);
 
   // ── Build the move list payload from current state ──
