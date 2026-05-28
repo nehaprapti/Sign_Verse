@@ -1,6 +1,6 @@
-import json
-import os
 from typing import List, Dict, Tuple, Any
+
+from src.utils.gesture_store import load_gesture_db
 
 class SignValidator:
     def __init__(self, db_path: str = 'gestures.json'):
@@ -10,15 +10,11 @@ class SignValidator:
 
     def load_db(self):
         """Loads or reloads the gesture database."""
-        if os.path.exists(self.db_path):
-            try:
-                with open(self.db_path, 'r') as f:
-                    self.db = json.load(f)
-            except Exception as e:
-                print(f"Error loading database: {e}")
-                self.db = {}
-        else:
-            self.db = {}
+        try:
+            self.db = load_gesture_db(self.db_path)
+        except Exception as e:
+            print(f"Error loading database: {e}")
+            self.db = {'Word': {}, 'Letter': {}}
 
     def validate_token(self, token: str) -> Dict[str, Any]:
         """
