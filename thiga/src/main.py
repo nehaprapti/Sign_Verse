@@ -16,6 +16,24 @@ from src.utils.validator import SignValidator
 # Storage for avatar bones in the 3D scene
 bones_in_scene = {}
 
+
+def normalize_gesture_db(db):
+    normalized = {}
+
+    for category, gestures in (db or {}).items():
+        if not isinstance(gestures, dict):
+            normalized[category] = gestures
+            continue
+
+        normalized[category] = {}
+        for name, poses in gestures.items():
+            normalized_name = str(name).strip().upper()
+            if not normalized_name:
+                continue
+            normalized[category][normalized_name] = poses
+
+    return normalized
+
 class SignVerseApp:
     def __init__(self):
         self.engine = AnimationEngine()
@@ -28,7 +46,7 @@ class SignVerseApp:
 
         
     def get_json_animation(self, token):
-        token = token.upper()
+        token = token.strip().upper()
         # Check Words first, then Letters
         db = self.validator.db
         poses = db.get('Word', {}).get(token) or db.get('Letter', {}).get(token)
@@ -143,7 +161,7 @@ async def api_save_gesture(request):
     if not name:
         return {'ok': False, 'error': 'missing move/name in payload'}
 
-    name = str(name).upper()
+    name = str(name).strip().upper()
 
     poses = payload.get('poses') or payload.get('frames') or []
 
@@ -208,7 +226,7 @@ async def api_save_gesture(request):
     if os.path.exists(db_path):
         try:
             with open(db_path, 'r', encoding='utf-8') as f:
-                db = json.load(f)
+                db = normalize_gesture_db(json.load(f))
         except Exception:
             db = {}
 
@@ -758,11 +776,11 @@ def main_page():
                     if os.path.exists(db_path):
                         try:
                             with open(db_path, 'r') as f:
-                                db = json.load(f)
+                                db = normalize_gesture_db(json.load(f))
                         except: pass
                     
                     cat = sim_cat.value
-                    name = sim_name.value.upper()
+                    name = sim_name.value.strip().upper()
                     
                     if cat not in db: db[cat] = {}
                     db[cat][name] = app_logic.marked_poses
@@ -794,13 +812,13 @@ def main_page():
                     
                     try:
                         with open(db_path, 'r') as f:
-                            db = json.load(f)
+                            db = normalize_gesture_db(json.load(f))
                     except:
                         ui.notify('Error reading database', type='negative')
                         return
                     
                     cat = sim_cat.value
-                    name = sim_name.value.upper()
+                    name = sim_name.value.strip().upper()
                     
                     if cat in db and name in db[cat]:
                         app_logic.marked_poses = list(db[cat][name])

@@ -8,12 +8,30 @@ class SignValidator:
         self.db = {}
         self.load_db()
 
+    def _normalize_db(self, db: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize top-level gesture keys so legacy whitespace entries still resolve."""
+        normalized = {}
+
+        for category, gestures in (db or {}).items():
+            if not isinstance(gestures, dict):
+                normalized[category] = gestures
+                continue
+
+            normalized[category] = {}
+            for name, poses in gestures.items():
+                normalized_name = str(name).strip().upper()
+                if not normalized_name:
+                    continue
+                normalized[category][normalized_name] = poses
+
+        return normalized
+
     def load_db(self):
         """Loads or reloads the gesture database."""
         if os.path.exists(self.db_path):
             try:
                 with open(self.db_path, 'r') as f:
-                    self.db = json.load(f)
+                    self.db = self._normalize_db(json.load(f))
             except Exception as e:
                 print(f"Error loading database: {e}")
                 self.db = {}
@@ -28,7 +46,7 @@ class SignValidator:
         - 'letters_found': list of bool (which letters are in DB?)
         - 'fully_supported': bool (can it be fully signed?)
         """
-        token_upper = token.upper()
+        token_upper = token.strip().upper()
         
         # Check if it's a word
         is_word = token_upper in self.db.get('Word', {})
