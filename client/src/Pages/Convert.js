@@ -21,65 +21,185 @@ import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognitio
 
 const MOVELIST_STORAGE_KEY = 'signverse_custom_movelists';
 
+const STRICT_PROMPT_TEMPLATE = `You are generating motion data for the SignVerse avatar system.
+
+TASK
+- Convert the user's motion description into a single valid JSON object only.
+- Do not include explanation text, markdown, or code fences.
+
+STRICT OUTPUT RULES
+- Return exactly one JSON object.
+- Required top-level keys: move, totalPoses, poses.
+- move must be uppercase letters/numbers/underscore only.
+- totalPoses must equal poses.length.
+- poses must be a non-empty array.
+- Each pose item must contain: index, name, snapshot.
+- snapshot must contain: leftHand and rightHand.
+- Each hand must contain: arm, forearm, hand, fingers.
+- arm/forearm/hand must each contain numeric x, y, z in radians.
+- fingers must be an object where each key is one of:
+  thumb1, thumb2, index1, index2, index3, middle1, middle2, middle3,
+  ring1, ring2, ring3, pinky1, pinky2, pinky3
+- Every provided finger joint must contain numeric x, y, z in radians.
+
+USER MOTION DESCRIPTION
+[PASTE VIDEO DESCRIPTION OR PROMPT HERE]
+
+TARGET SHAPE (example values; replace with real values)
+{
+  "move": "CUSTOM_MOVE_NAME",
+  "totalPoses": 2,
+  "poses": [
+    {
+      "index": 1,
+      "name": "POSE_1",
+      "snapshot": {
+        "leftHand": {
+          "arm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "forearm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "hand": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "fingers": {
+            "thumb1": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "index1": { "x": 0.0, "y": 0.0, "z": 0.0 }
+          }
+        },
+        "rightHand": {
+          "arm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "forearm": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "hand": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "fingers": {
+            "thumb1": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "index1": { "x": 0.0, "y": 0.0, "z": 0.0 }
+          }
+        }
+      }
+    }
+  ]
+}`;
+
 const AXES = ['x', 'y', 'z'];
 const EPSILON = 0.0005;
 
-const getArmBoneCandidates = (side) => ({
-  arm: [`mixamorig${side}Arm`, `${side}Arm`],
-  forearm: [`mixamorig${side}ForeArm`, `${side}ForeArm`],
-  hand: [`mixamorig${side}Hand`, `${side}Hand`],
-});
+const normalizeMoveKey = (rawValue) => {
+  return String(rawValue || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^A-Z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+};
 
-const getFingerBoneCandidates = (side) => ({
-  thumb1: [`mixamorig${side}HandThumb1`, `${side}HandThumb1`],
-  thumb2: [`mixamorig${side}HandThumb2`, `${side}HandThumb2`],
-  index1: [`mixamorig${side}HandIndex1`, `${side}HandIndex1`],
-  index2: [`mixamorig${side}HandIndex2`, `${side}HandIndex2`],
-  index3: [`mixamorig${side}HandIndex3`, `${side}HandIndex3`],
-  middle1: [`mixamorig${side}HandMiddle1`, `${side}HandMiddle1`],
-  middle2: [`mixamorig${side}HandMiddle2`, `${side}HandMiddle2`],
-  middle3: [`mixamorig${side}HandMiddle3`, `${side}HandMiddle3`],
-  ring1: [`mixamorig${side}HandRing1`, `${side}HandRing1`],
-  ring2: [`mixamorig${side}HandRing2`, `${side}HandRing2`],
-  ring3: [`mixamorig${side}HandRing3`, `${side}HandRing3`],
-  pinky1: [`mixamorig${side}HandPinky1`, `${side}HandPinky1`],
-  pinky2: [`mixamorig${side}HandPinky2`, `${side}HandPinky2`],
-  pinky3: [`mixamorig${side}HandPinky3`, `${side}HandPinky3`],
-});
+const buildLegacyMoveKey = (normalizedKey) => {
+  return String(normalizedKey || '').replace(/[^A-Z]/g, '');
+};
 
-const resolveBoneName = (avatar, candidates) => {
-  if (!avatar || !candidates) {
+const resolveStoredMoveList = (storedMoveLists, rawToken) => {
+  const normalizedKey = normalizeMoveKey(rawToken);
+  if (!normalizedKey) {
     return null;
   }
 
-  for (const candidate of candidates) {
-    if (avatar.getObjectByName(candidate)) {
-      return candidate;
-    }
+  if (storedMoveLists[normalizedKey]) {
+    return {
+      moveName: normalizedKey,
+      payload: storedMoveLists[normalizedKey],
+    };
+  }
+
+  const legacyKey = buildLegacyMoveKey(normalizedKey);
+  if (legacyKey && storedMoveLists[legacyKey]) {
+    return {
+      moveName: legacyKey,
+      payload: storedMoveLists[legacyKey],
+    };
   }
 
   return null;
 };
 
-const addRotationSteps = (animation, boneName, currentRotation, targetRotation) => {
-  if (!boneName || !targetRotation) {
+const resolveAvatarModel = (avatarName) => {
+  const normalizedAvatarName = String(avatarName || '').trim().toLowerCase();
+
+  if (normalizedAvatarName === 'xbot') {
+    return xbot;
+  }
+
+  if (normalizedAvatarName === 'ybot') {
+    return ybot;
+  }
+
+  return null;
+};
+
+const resolveAvatarLabel = (avatarModel) => {
+  if (avatarModel === xbot) {
+    return 'XBOT';
+  }
+
+  if (avatarModel === ybot) {
+    return 'YBOT';
+  }
+
+  return 'UNKNOWN';
+};
+
+const setBoneRotation = (bone, x = 0, y = 0, z = 0) => {
+  if (!bone) {
     return;
   }
 
-  for (const axis of AXES) {
-    const currentValue = currentRotation?.[axis] ?? 0;
-    const targetValue = targetRotation?.[axis];
-    if (typeof targetValue !== 'number') {
-      continue;
-    }
+  bone.rotation.set(x, y, z);
+};
 
-    const delta = targetValue - currentValue;
-    if (Math.abs(delta) <= EPSILON) {
-      continue;
-    }
+const getFingerBoneNameCandidates = (hand, joint) => {
+  const side = hand === 'left' ? 'Left' : 'Right';
+  const map = {
+    index1: [`mixamorig${side}HandIndex1`, `${side}HandIndex1`],
+    index2: [`mixamorig${side}HandIndex2`, `${side}HandIndex2`],
+    index3: [`mixamorig${side}HandIndex3`, `${side}HandIndex3`],
+    middle1: [`mixamorig${side}HandMiddle1`, `${side}HandMiddle1`],
+    middle2: [`mixamorig${side}HandMiddle2`, `${side}HandMiddle2`],
+    middle3: [`mixamorig${side}HandMiddle3`, `${side}HandMiddle3`],
+    ring1: [`mixamorig${side}HandRing1`, `${side}HandRing1`],
+    ring2: [`mixamorig${side}HandRing2`, `${side}HandRing2`],
+    ring3: [`mixamorig${side}HandRing3`, `${side}HandRing3`],
+    pinky1: [`mixamorig${side}HandPinky1`, `${side}HandPinky1`],
+    pinky2: [`mixamorig${side}HandPinky2`, `${side}HandPinky2`],
+    pinky3: [`mixamorig${side}HandPinky3`, `${side}HandPinky3`],
+    thumb1: [`mixamorig${side}HandThumb1`, `${side}HandThumb1`],
+    thumb2: [`mixamorig${side}HandThumb2`, `${side}HandThumb2`],
+  };
+  return map[joint] || [];
+};
 
-    animation.push([boneName, 'rotation', axis, targetValue, delta > 0 ? '+' : '-']);
+const getArmBoneNameCandidates = (hand, part) => {
+  const side = hand === 'left' ? 'Left' : 'Right';
+  if (part === 'arm') return [`mixamorig${side}Arm`, `${side}Arm`];
+  if (part === 'forearm') return [`mixamorig${side}ForeArm`, `${side}ForeArm`];
+  if (part === 'hand') return [`mixamorig${side}Hand`, `${side}Hand`];
+  return [];
+};
+
+const findBone = (avatar, candidates) => {
+  if (!avatar || !candidates) return null;
+  for (const name of candidates) {
+    const bone = avatar.getObjectByName(name);
+    if (bone) return bone;
   }
+  return null;
+};
+
+const addRotationSteps = (ref, animation, hand, part, joint, targetValue, boneName, axis) => {
+  const bone = ref.avatar.getObjectByName(boneName);
+  if (!bone) return;
+  
+  const currentValue = bone.rotation[axis];
+  const delta = targetValue - currentValue;
+  if (Math.abs(delta) <= EPSILON) {
+    return;
+  }
+
+  animation.push([boneName, 'rotation', axis, targetValue, delta > 0 ? '+' : '-']);
 };
 
 const queuePoseSnapshotAnimation = (ref, snapshot) => {
@@ -89,54 +209,46 @@ const queuePoseSnapshotAnimation = (ref, snapshot) => {
 
   const animation = [];
   const sideConfig = [
-    { key: 'leftHand', side: 'Left' },
-    { key: 'rightHand', side: 'Right' },
+    { key: 'leftHand', side: 'left' },
+    { key: 'rightHand', side: 'right' },
   ];
 
   for (const config of sideConfig) {
     const handSnapshot = snapshot[config.key];
+    const hand = config.side;
     if (!handSnapshot) {
       continue;
     }
 
-    const armCandidates = getArmBoneCandidates(config.side);
-    const fingerCandidates = getFingerBoneCandidates(config.side);
-
-    const armBoneName = resolveBoneName(ref.avatar, armCandidates.arm);
-    const forearmBoneName = resolveBoneName(ref.avatar, armCandidates.forearm);
-    const handBoneName = resolveBoneName(ref.avatar, armCandidates.hand);
-
-    addRotationSteps(
-      animation,
-      armBoneName,
-      ref.avatar.getObjectByName(armBoneName)?.rotation,
-      handSnapshot.arm,
-    );
-    addRotationSteps(
-      animation,
-      forearmBoneName,
-      ref.avatar.getObjectByName(forearmBoneName)?.rotation,
-      handSnapshot.forearm,
-    );
-    addRotationSteps(
-      animation,
-      handBoneName,
-      ref.avatar.getObjectByName(handBoneName)?.rotation,
-      handSnapshot.hand,
-    );
-
-    for (const [jointName, targetRotation] of Object.entries(handSnapshot.fingers || {})) {
-      const fingerBoneName = resolveBoneName(ref.avatar, fingerCandidates[jointName]);
-      if (!fingerBoneName) {
+    // Compare arm, forearm, hand
+    for (const part of ['arm', 'forearm', 'hand']) {
+      const candidates = getArmBoneNameCandidates(hand, part);
+      const bone = findBone(ref.avatar, candidates);
+      if (!bone) {
         continue;
       }
+      const boneName = bone.name;
+      const target = handSnapshot[part];
+      if (target) {
+        addRotationSteps(ref, animation, hand, part, null, target.x, boneName, 'x');
+        addRotationSteps(ref, animation, hand, part, null, target.y, boneName, 'y');
+        addRotationSteps(ref, animation, hand, part, null, target.z, boneName, 'z');
+      }
+    }
 
-      addRotationSteps(
-        animation,
-        fingerBoneName,
-        ref.avatar.getObjectByName(fingerBoneName)?.rotation,
-        targetRotation,
-      );
+    // Compare fingers
+    for (const [joint, targetRotation] of Object.entries(handSnapshot.fingers || {})) {
+      const candidates = getFingerBoneNameCandidates(hand, joint);
+      const bone = findBone(ref.avatar, candidates);
+      if (!bone) {
+        continue;
+      }
+      const boneName = bone.name;
+      if (targetRotation) {
+        addRotationSteps(ref, animation, hand, null, joint, targetRotation.x, boneName, 'x');
+        addRotationSteps(ref, animation, hand, null, joint, targetRotation.y, boneName, 'y');
+        addRotationSteps(ref, animation, hand, null, joint, targetRotation.z, boneName, 'z');
+      }
     }
   }
 
@@ -168,9 +280,81 @@ const readStoredMoveLists = () => {
 };
 
 const saveStoredMoveList = (moveName, payload) => {
+  const normalizedMoveName = normalizeMoveKey(moveName);
+  if (!normalizedMoveName) {
+    return;
+  }
+
   const existing = readStoredMoveLists();
-  existing[moveName] = payload;
+  existing[normalizedMoveName] = {
+    ...payload,
+    move: normalizedMoveName,
+  };
+
+  const legacyKey = buildLegacyMoveKey(normalizedMoveName);
+  if (legacyKey && legacyKey !== normalizedMoveName) {
+    existing[legacyKey] = existing[normalizedMoveName];
+  }
+
   localStorage.setItem(MOVELIST_STORAGE_KEY, JSON.stringify(existing));
+};
+
+const extractJsonObjectFromText = (rawText) => {
+  const trimmed = typeof rawText === 'string' ? rawText.trim() : '';
+  if (!trimmed) {
+    throw new Error('Prompt text is empty. Paste a move prompt first.');
+  }
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch && fencedMatch[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBraceIndex = trimmed.indexOf('{');
+  const lastBraceIndex = trimmed.lastIndexOf('}');
+  if (firstBraceIndex >= 0 && lastBraceIndex > firstBraceIndex) {
+    return trimmed.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+  }
+
+  return trimmed;
+};
+
+const normalizeImportedMoveList = (payload) => {
+  const moveNameRaw = typeof payload?.move === 'string'
+    ? payload.move
+    : (typeof payload?.word === 'string' ? payload.word : '');
+
+  const moveName = normalizeMoveKey(moveNameRaw);
+  if (!moveName) {
+    throw new Error('Missing "move" (or "word") in payload.');
+  }
+
+  if (!Array.isArray(payload?.poses) || payload.poses.length === 0) {
+    throw new Error('Payload must contain a non-empty "poses" array.');
+  }
+
+  const validPoseCount = payload.poses.filter((pose) => pose?.snapshot).length;
+  if (validPoseCount === 0) {
+    throw new Error('Payload poses do not contain snapshots.');
+  }
+
+  return {
+    moveName,
+    normalizedPayload: {
+      ...payload,
+      move: moveName,
+      avatar: typeof payload?.avatar === 'string'
+        ? payload.avatar.trim().toLowerCase()
+        : payload.avatar,
+      totalPoses: payload.totalPoses || payload.poses.length,
+    },
+  };
+};
+
+const parseMoveListFromPromptText = (promptText) => {
+  const jsonText = extractJsonObjectFromText(promptText);
+  const parsedPayload = JSON.parse(jsonText);
+  return normalizeImportedMoveList(parsedPayload);
 };
 
 function Convert() {
@@ -185,8 +369,12 @@ function Convert() {
   const [detectedLanguage, setDetectedLanguage] = useState("");
   const [translationError, setTranslationError] = useState("");
   const [movelistFile, setMovelistFile] = useState(null);
+  const [movelistPromptText, setMovelistPromptText] = useState('');
   const [movelistImportMessage, setMovelistImportMessage] = useState("");
   const [movelistImportError, setMovelistImportError] = useState("");
+  const [templateCopyMessage, setTemplateCopyMessage] = useState('');
+  const [templateCopyError, setTemplateCopyError] = useState('');
+  const [showCorrectOverlay, setShowCorrectOverlay] = useState(false);
 
   const componentRef = useRef({});
   const { current: ref } = componentRef;
@@ -200,8 +388,58 @@ function Convert() {
     resetTranscript,
   } = useSpeechRecognition();
 
-  useEffect(() => {
+  const resetAvatarPose = () => {
+    if (!ref.avatar) {
+      return;
+    }
 
+    ref.animations = [];
+    ref.pending = false;
+    ref.flag = false;
+
+    const findAndSetRotation = (hand, part, x, y, z) => {
+      const candidates = getArmBoneNameCandidates(hand, part);
+      const bone = findBone(ref.avatar, candidates);
+      if (bone) {
+        setBoneRotation(bone, x, y, z);
+      }
+    };
+
+    setBoneRotation(ref.avatar.getObjectByName('mixamorigNeck') || ref.avatar.getObjectByName('Neck'), Math.PI / 12, 0, 0);
+    
+    findAndSetRotation('left', 'arm', 0, 0, -Math.PI / 3);
+    findAndSetRotation('left', 'forearm', 0, -Math.PI / 1.5, 0);
+    findAndSetRotation('left', 'hand', 0, 0, 0);
+
+    findAndSetRotation('right', 'arm', 0, 0, Math.PI / 3);
+    findAndSetRotation('right', 'forearm', 0, Math.PI / 1.5, 0);
+    findAndSetRotation('right', 'hand', 0, 0, 0);
+
+    const resetFingers = (hand) => {
+      const joints = [
+        'thumb1', 'thumb2', 'index1', 'index2', 'index3',
+        'middle1', 'middle2', 'middle3', 'ring1', 'ring2', 'ring3',
+        'pinky1', 'pinky2', 'pinky3'
+      ];
+      
+      joints.forEach((joint) => {
+        const candidates = getFingerBoneNameCandidates(hand, joint);
+        const bone = findBone(ref.avatar, candidates);
+        if (bone) {
+          setBoneRotation(bone, 0, 0, 0);
+        }
+      });
+    };
+
+    resetFingers('left');
+    resetFingers('right');
+
+    if (ref.renderer && ref.scene && ref.camera) {
+      ref.renderer.render(ref.scene, ref.camera);
+    }
+  };
+
+  useEffect(() => {
     ref.flag = false;
     ref.pending = false;
 
@@ -257,6 +495,8 @@ function Convert() {
     if (ref.animations.length === 0) {
       ref.pending = false;
       setCurrentWordIndex(0); // Reset index when animations complete
+      setShowCorrectOverlay(true);
+      setTimeout(() => setShowCorrectOverlay(false), 3000);
       return;
     }
     requestAnimationFrame(ref.animate);
@@ -309,6 +549,7 @@ function Convert() {
     setTranslationError("");
     setDetectedLanguage("");
     setIsTranslating(true);
+    resetAvatarPose();
 
     try {
       const rawInput = str.trim();
@@ -345,30 +586,38 @@ function Convert() {
       const storedMoveLists = readStoredMoveLists();
 
       for (let word of strWords) {
-        const normalizedWord = word.replace(/[^A-Z]/g, '');
-        if (!normalizedWord) {
+        const normalizedWord = normalizeMoveKey(word);
+        const letterOnlyWord = buildLegacyMoveKey(normalizedWord);
+        if (!normalizedWord && !letterOnlyWord) {
           continue;
         }
 
-        if (storedMoveLists[normalizedWord]) {
-          wordArray.push(normalizedWord);
-          ref.animations.push(['add-text', normalizedWord + ' ']);
-          queueStoredMoveList(ref, storedMoveLists[normalizedWord]);
+        const storedMove = resolveStoredMoveList(storedMoveLists, word);
+        if (storedMove) {
+          wordArray.push(storedMove.moveName);
+          ref.animations.push(['add-text', storedMove.moveName + ' ']);
+
+          const importedAvatar = resolveAvatarModel(storedMove.payload?.avatar);
+          if (importedAvatar && importedAvatar !== bot) {
+            setBot(importedAvatar);
+          }
+
+          queueStoredMoveList(ref, storedMove.payload);
           continue;
         }
 
-        if (words.wordList.includes(normalizedWord) && typeof words[normalizedWord] === 'function') {
-          wordArray.push(normalizedWord);
-          ref.animations.push(['add-text', normalizedWord + ' ']);
-          words[normalizedWord](ref);
+        if (letterOnlyWord && words.wordList.includes(letterOnlyWord) && typeof words[letterOnlyWord] === 'function') {
+          wordArray.push(letterOnlyWord);
+          ref.animations.push(['add-text', letterOnlyWord + ' ']);
+          words[letterOnlyWord](ref);
           continue;
         }
 
         // Fallback to fingerspelling for words without movelist support.
-        for (const [index, ch] of normalizedWord.split('').entries()) {
+        for (const [index, ch] of letterOnlyWord.split('').entries()) {
           if (alphabets[ch] && typeof alphabets[ch] === 'function') {
             wordArray.push(ch);
-            if (index === normalizedWord.length - 1)
+            if (index === letterOnlyWord.length - 1)
               ref.animations.push(['add-text', ch + ' ']);
             else
               ref.animations.push(['add-text', ch]);
@@ -414,29 +663,37 @@ function Convert() {
       const storedMoveLists = readStoredMoveLists();
 
       for (let word of strWords) {
-        const normalizedWord = word.replace(/[^A-Z]/g, '');
-        if (!normalizedWord) {
+        const normalizedWord = normalizeMoveKey(word);
+        const letterOnlyWord = buildLegacyMoveKey(normalizedWord);
+        if (!normalizedWord && !letterOnlyWord) {
           continue;
         }
 
-        if (storedMoveLists[normalizedWord]) {
-          wordArray.push(normalizedWord);
-          ref.animations.push(['add-text', normalizedWord + ' ']);
-          queueStoredMoveList(ref, storedMoveLists[normalizedWord]);
+        const storedMove = resolveStoredMoveList(storedMoveLists, word);
+        if (storedMove) {
+          wordArray.push(storedMove.moveName);
+          ref.animations.push(['add-text', storedMove.moveName + ' ']);
+
+          const importedAvatar = resolveAvatarModel(storedMove.payload?.avatar);
+          if (importedAvatar && importedAvatar !== bot) {
+            setBot(importedAvatar);
+          }
+
+          queueStoredMoveList(ref, storedMove.payload);
           continue;
         }
 
-        if (words.wordList.includes(normalizedWord) && typeof words[normalizedWord] === 'function') {
-          wordArray.push(normalizedWord);
-          ref.animations.push(['add-text', normalizedWord + ' ']);
-          words[normalizedWord](ref);
+        if (letterOnlyWord && words.wordList.includes(letterOnlyWord) && typeof words[letterOnlyWord] === 'function') {
+          wordArray.push(letterOnlyWord);
+          ref.animations.push(['add-text', letterOnlyWord + ' ']);
+          words[letterOnlyWord](ref);
           continue;
         }
 
-        for (const [index, ch] of normalizedWord.split('').entries()) {
+        for (const [index, ch] of letterOnlyWord.split('').entries()) {
           if (alphabets[ch] && typeof alphabets[ch] === 'function') {
             wordArray.push(ch);
-            if (index === normalizedWord.length - 1)
+            if (index === letterOnlyWord.length - 1)
               ref.animations.push(['add-text', ch + ' ']);
             else
               ref.animations.push(['add-text', ch]);
@@ -476,34 +733,16 @@ function Convert() {
     try {
       const fileContent = await movelistFile.text();
       const payload = JSON.parse(fileContent);
+      const { moveName, normalizedPayload } = normalizeImportedMoveList(payload);
 
-      const moveNameRaw = typeof payload?.move === 'string'
-        ? payload.move
-        : (typeof payload?.word === 'string' ? payload.word : '');
-
-      const moveName = moveNameRaw.trim().toUpperCase();
-      if (!moveName) {
-        throw new Error('Missing "move" (or "word") in JSON payload.');
+      const importedAvatar = resolveAvatarModel(normalizedPayload.avatar);
+      if (importedAvatar) {
+        setBot(importedAvatar);
       }
-
-      if (!Array.isArray(payload?.poses) || payload.poses.length === 0) {
-        throw new Error('JSON must contain a non-empty "poses" array.');
-      }
-
-      const validPoseCount = payload.poses.filter((pose) => pose?.snapshot).length;
-      if (validPoseCount === 0) {
-        throw new Error('JSON poses do not contain snapshots.');
-      }
-
-      const normalizedPayload = {
-        ...payload,
-        move: moveName,
-        totalPoses: payload.totalPoses || payload.poses.length,
-      };
 
       saveStoredMoveList(moveName, normalizedPayload);
       setMovelistImportError('');
-      setMovelistImportMessage(`Imported "${moveName}" with ${normalizedPayload.poses.length} poses. You can use this word in Convert now.`);
+      setMovelistImportMessage(`Imported "${moveName}" with ${normalizedPayload.poses.length} poses using ${resolveAvatarLabel(importedAvatar || bot)}.`);
       setMovelistFile(null);
     } catch (error) {
       console.error('Movelist import failed:', error);
@@ -512,8 +751,88 @@ function Convert() {
     }
   };
 
+  const importWordAnimationPrompt = () => {
+    try {
+      const { moveName, normalizedPayload } = parseMoveListFromPromptText(movelistPromptText);
+      const importedAvatar = resolveAvatarModel(normalizedPayload.avatar);
+      if (importedAvatar) {
+        setBot(importedAvatar);
+      }
+      saveStoredMoveList(moveName, normalizedPayload);
+      setMovelistImportError('');
+      setMovelistImportMessage(`Imported from prompt: "${moveName}" with ${normalizedPayload.poses.length} poses using ${resolveAvatarLabel(importedAvatar || bot)}.`);
+      setMovelistPromptText('');
+    } catch (error) {
+      console.error('Prompt import failed:', error);
+      setMovelistImportMessage('');
+      setMovelistImportError(`Prompt import failed: ${error.message}`);
+    }
+  };
+
+  const copyStrictTemplate = async () => {
+    const textToCopy = STRICT_PROMPT_TEMPLATE;
+
+    if (!textToCopy.trim()) {
+      setTemplateCopyMessage('');
+      setTemplateCopyError('No template available to copy.');
+      return;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        const tempTextArea = document.createElement('textarea');
+        tempTextArea.value = textToCopy;
+        tempTextArea.setAttribute('readonly', '');
+        tempTextArea.style.position = 'absolute';
+        tempTextArea.style.left = '-9999px';
+        document.body.appendChild(tempTextArea);
+        tempTextArea.select();
+
+        const copied = document.execCommand('copy');
+        document.body.removeChild(tempTextArea);
+
+        if (!copied) {
+          throw new Error('Clipboard command failed.');
+        }
+      }
+
+      setTemplateCopyError('');
+      setTemplateCopyMessage('Template copied. Paste it into ChatGPT/Claude.');
+    } catch (error) {
+      console.error('Template copy failed:', error);
+      setTemplateCopyMessage('');
+      setTemplateCopyError('Could not copy automatically. Select and copy manually.');
+    }
+  };
+
+  const insertTemplateIntoPrompt = () => {
+    setMovelistPromptText(STRICT_PROMPT_TEMPLATE);
+    setTemplateCopyError('');
+    setTemplateCopyMessage('Template inserted into the prompt box.');
+    setMovelistImportError('');
+  };
+
+  const clearPromptText = () => {
+    setMovelistPromptText('');
+    setMovelistImportError('');
+    setTemplateCopyError('');
+    setTemplateCopyMessage('Prompt box cleared.');
+  };
+
   return (
     <div className='container-fluid page-container-cream'>
+      {showCorrectOverlay && (
+        <div className="correct-sign-overlay">
+          <div className="correct-sign-content">
+            <div className="checkmark-circle">
+              <i className="fa fa-check" />
+            </div>
+            <h1>CORRECT SIGN!</h1>
+          </div>
+        </div>
+      )}
       <div className='row'>
         <div className='col-md-3'>
           {/* Detected Language Display */}
@@ -621,6 +940,95 @@ function Convert() {
           >
             Import JSON
           </button>
+
+          <label className='label-style mt-2'>
+            Paste Motion Prompt
+          </label>
+          <textarea
+            rows={6}
+            value={movelistPromptText}
+            onChange={(event) => {
+              setMovelistPromptText(event.target.value);
+              if (movelistImportError) {
+                setMovelistImportError('');
+              }
+              if (templateCopyMessage) {
+                setTemplateCopyMessage('');
+              }
+              if (templateCopyError) {
+                setTemplateCopyError('');
+              }
+            }}
+            placeholder='Paste ChatGPT/Claude output that includes move-list JSON.'
+            className='w-100 input-style'
+          />
+          <button
+            className='btn btn-brown w-100 btn-style btn-start'
+            onClick={importWordAnimationPrompt}
+            disabled={!movelistPromptText.trim()}
+          >
+            Import Prompt
+          </button>
+
+          <label className='label-style mt-2'>
+            Strict Prompt Template
+          </label>
+          <textarea
+            rows={8}
+            value={STRICT_PROMPT_TEMPLATE}
+            readOnly
+            className='w-100 input-style'
+          />
+          <button
+            className='btn btn-brown w-100 btn-style btn-start'
+            onClick={copyStrictTemplate}
+          >
+            Copy Template (One Click)
+          </button>
+          <div className='space-between'>
+            <button
+              className='btn btn-brown btn-style'
+              style={{ width: '49%' }}
+              onClick={insertTemplateIntoPrompt}
+            >
+              Insert Template
+            </button>
+            <button
+              className='btn btn-brown btn-style'
+              style={{ width: '49%' }}
+              onClick={clearPromptText}
+            >
+              Clear Prompt
+            </button>
+          </div>
+
+          {templateCopyMessage && (
+            <div style={{
+              padding: '8px',
+              marginBottom: '12px',
+              backgroundColor: '#d4edda',
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: '#155724'
+            }}>
+              <i className="fa fa-check-circle" style={{ marginRight: '8px' }} />
+              {templateCopyMessage}
+            </div>
+          )}
+          {templateCopyError && (
+            <div style={{
+              padding: '8px',
+              marginBottom: '12px',
+              backgroundColor: '#f8d7da',
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: '#721c24'
+            }}>
+              <i className="fa fa-exclamation-circle" style={{ marginRight: '8px' }} />
+              {templateCopyError}
+            </div>
+          )}
+
           {movelistImportMessage && (
             <div style={{
               padding: '8px',
@@ -669,8 +1077,31 @@ function Convert() {
           <p className='bot-label'>
             Select Avatar
           </p>
-          <img src={xbotPic} className='bot-image col-md-11' onClick={() => { setBot(xbot) }} alt='Avatar 1: XBOT' />
-          <img src={ybotPic} className='bot-image col-md-11' onClick={() => { setBot(ybot) }} alt='Avatar 2: YBOT' />
+          <img
+            src={xbotPic}
+            className='bot-image col-md-11'
+            style={{
+              border: bot === xbot ? '4px solid #8B4513' : '4px solid transparent',
+              borderRadius: '12px',
+              boxSizing: 'border-box',
+            }}
+            onClick={() => { setBot(xbot); }}
+            alt='Avatar 1: XBOT'
+          />
+          <img
+            src={ybotPic}
+            className='bot-image col-md-11'
+            style={{
+              border: bot === ybot ? '4px solid #8B4513' : '4px solid transparent',
+              borderRadius: '12px',
+              boxSizing: 'border-box',
+            }}
+            onClick={() => { setBot(ybot); }}
+            alt='Avatar 2: YBOT'
+          />
+          <div className='simulator-status' style={{ marginTop: '8px' }}>
+            Current Avatar: {resolveAvatarLabel(bot)}
+          </div>
           <p className='label-style'>
             Animation Speed: {Math.round(speed * 100) / 100}
           </p>
@@ -700,5 +1131,6 @@ function Convert() {
     </div>
   )
 }
+
 
 export default Convert;
