@@ -1,0 +1,1394 @@
+[
+    {
+        "mixamorigLeftArm": {
+            "x": 0,
+            "y": 0,
+            "z": -1.38
+        },
+        "mixamorigLeftForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightArm": {
+            "x": 0,
+            "y": 0,
+            "z": 1.38
+        },
+        "mixamorigRightForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+    },
+    {
+        "mixamorigLeftArm": {
+            "x": 0,
+            "y": 0,
+            "z": -1.38
+        },
+        "mixamorigLeftForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightArm": {
+            "x": -0.12,
+            "y": 0.4,
+            "z": 0.97
+        },
+        "mixamorigRightForeArm": {
+            "x": 0,
+            "y": 2.19,
+            "z": 0
+        },
+        "mixamorigRightHand": {
+            "x": 1.06,
+            "y": -0.46,
+            "z": 0.53
+        },
+        "mixamorigRightHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb1": {
+            "x": 0,
+            "y": -1.05,
+            "z": 0
+        },
+        "mixamorigRightHandThumb2": {
+            "x": 0,
+            "y": -1.4,
+            "z": 0
+        },
+        "mixamorigRightHandThumb3": {
+            "x": 0,
+            "y": 0.53,
+            "z": 0
+        },
+        "mixamorigRightHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+    },
+    {
+        "mixamorigLeftArm": {
+            "x": 0,
+            "y": 0,
+            "z": -1.38
+        },
+        "mixamorigLeftForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightArm": {
+            "x": -0.12,
+            "y": 0.4,
+            "z": 0.97
+        },
+        "mixamorigRightForeArm": {
+            "x": 0,
+            "y": 2.19,
+            "z": 0
+        },
+        "mixamorigRightHand": {
+            "x": 1.06,
+            "y": -0.46,
+            "z": 1.16
+        },
+        "mixamorigRightHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb1": {
+            "x": 0,
+            "y": -1.05,
+            "z": 0
+        },
+        "mixamorigRightHandThumb2": {
+            "x": 0,
+            "y": -1.4,
+            "z": 0
+        },
+        "mixamorigRightHandThumb3": {
+            "x": 0,
+            "y": 0.53,
+            "z": 0
+        },
+        "mixamorigRightHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+    },
+    {
+        "mixamorigLeftArm": {
+            "x": 0,
+            "y": 0,
+            "z": -1.38
+        },
+        "mixamorigLeftForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightArm": {
+            "x": -0.12,
+            "y": 0.4,
+            "z": 0.97
+        },
+        "mixamorigRightForeArm": {
+            "x": 0,
+            "y": 2.19,
+            "z": 0
+        },
+        "mixamorigRightHand": {
+            "x": 1.06,
+            "y": -0.46,
+            "z": 0.53
+        },
+        "mixamorigRightHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb1": {
+            "x": 0,
+            "y": -1.05,
+            "z": 0
+        },
+        "mixamorigRightHandThumb2": {
+            "x": 0,
+            "y": -1.4,
+            "z": 0
+        },
+        "mixamorigRightHandThumb3": {
+            "x": 0,
+            "y": 0.53,
+            "z": 0
+        },
+        "mixamorigRightHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+    },
+    {
+        "mixamorigLeftArm": {
+            "x": 0,
+            "y": 0,
+            "z": -1.38
+        },
+        "mixamorigLeftForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightArm": {
+            "x": -0.12,
+            "y": 0.4,
+            "z": 0.97
+        },
+        "mixamorigRightForeArm": {
+            "x": 0,
+            "y": 2.19,
+            "z": 0
+        },
+        "mixamorigRightHand": {
+            "x": 1.06,
+            "y": -0.46,
+            "z": 1.16
+        },
+        "mixamorigRightHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb1": {
+            "x": 0,
+            "y": -1.05,
+            "z": 0
+        },
+        "mixamorigRightHandThumb2": {
+            "x": 0,
+            "y": -1.4,
+            "z": 0
+        },
+        "mixamorigRightHandThumb3": {
+            "x": 0,
+            "y": 0.53,
+            "z": 0
+        },
+        "mixamorigRightHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 1.4
+        },
+        "mixamorigRightHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+    },
+    {
+        "mixamorigLeftArm": {
+            "x": 0,
+            "y": 0,
+            "z": -1.38
+        },
+        "mixamorigLeftForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigLeftHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightArm": {
+            "x": 0,
+            "y": 0,
+            "z": 1.38
+        },
+        "mixamorigRightForeArm": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHand": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandMiddle4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandThumb4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandIndex4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandRing4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky1": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky2": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky3": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "mixamorigRightHandPinky4": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+    }
+]
