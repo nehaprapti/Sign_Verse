@@ -12,27 +12,10 @@ from src.utils.language_utils import detect_and_translate
 from src.core.grammar import GrammarEngine
 from src.core.engine import AnimationEngine
 from src.utils.validator import SignValidator
+from src.utils.gesture_store import load_word_gesture, save_gesture
 
 # Storage for avatar bones in the 3D scene
 bones_in_scene = {}
-
-
-def normalize_gesture_db(db):
-    normalized = {}
-
-    for category, gestures in (db or {}).items():
-        if not isinstance(gestures, dict):
-            normalized[category] = gestures
-            continue
-
-        normalized[category] = {}
-        for name, poses in gestures.items():
-            normalized_name = str(name).strip().upper()
-            if not normalized_name:
-                continue
-            normalized[category][normalized_name] = poses
-
-    return normalized
 
 class SignVerseApp:
     def __init__(self):
@@ -46,7 +29,7 @@ class SignVerseApp:
 
         
     def get_json_animation(self, token):
-        token = token.strip().upper()
+        token = token.upper()
         # Check Words first, then Letters
         db = self.validator.db
         poses = db.get('Word', {}).get(token) or db.get('Letter', {}).get(token)
@@ -153,7 +136,7 @@ async def api_save_gesture(request):
     except Exception as e:
         return {'ok': False, 'error': f'invalid json: {e}'}
 
-    import json, os
+    import json
 
     # Normalize inputs
     cat = (payload.get('category') or 'Word')
@@ -161,7 +144,7 @@ async def api_save_gesture(request):
     if not name:
         return {'ok': False, 'error': 'missing move/name in payload'}
 
-    name = str(name).strip().upper()
+    name = str(name).upper()
 
     poses = payload.get('poses') or payload.get('frames') or []
 
@@ -221,23 +204,8 @@ async def api_save_gesture(request):
 
         converted_sequence.append(pose_bones)
 
-    db_path = 'gestures.json'
-    db = {}
-    if os.path.exists(db_path):
-        try:
-            with open(db_path, 'r', encoding='utf-8') as f:
-                db = normalize_gesture_db(json.load(f))
-        except Exception:
-            db = {}
-
-    if cat not in db:
-        db[cat] = {}
-
-    db[cat][name] = converted_sequence
-
     try:
-        with open(db_path, 'w', encoding='utf-8') as f:
-            json.dump(db, f, indent=4, ensure_ascii=False)
+        save_gesture(cat, name, converted_sequence)
     except Exception as e:
         return {'ok': False, 'error': f'write failed: {e}'}
 
@@ -771,25 +739,13 @@ def main_page():
                         ui.notify('Please enter a Name first!', type='warning')
                         return
                     
-                    db_path = 'gestures.json'
-                    db = {}
-                    if os.path.exists(db_path):
-                        try:
-                            with open(db_path, 'r') as f:
-                                db = normalize_gesture_db(json.load(f))
-                        except: pass
-                    
                     cat = sim_cat.value
-                    name = sim_name.value.strip().upper()
-                    
-                    if cat not in db: db[cat] = {}
-                    db[cat][name] = app_logic.marked_poses
-                    
-                    with open(db_path, 'w') as f:
-                        json.dump(db, f, indent=4)
-                    
+                    name = sim_name.value.upper()
+
+                    save_gesture(cat, name, app_logic.marked_poses)
                     app_logic.validator.load_db() # Reload validator DB
-                    ui.notify(f'Saved {name} to {db_path}!')
+                    target = f'words/{name}.json' if cat == 'Word' else 'gestures.json'
+                    ui.notify(f'Saved {name} to {target}!')
 
                 with ui.row().classes('w-full gap-2 mt-2'):
                     ui.button('Mark Pose', on_click=mark_pose).classes('grow').props('icon=add_circle color=primary')
@@ -805,27 +761,31 @@ def main_page():
                     ui.notify(f'Looping {"ON" if app_logic.loop_enabled else "OFF"}')
 
                 def load_from_db():
-                    db_path = 'gestures.json'
-                    if not os.path.exists(db_path):
-                        ui.notify('Database not found', type='warning')
-                        return
-                    
-                    try:
-                        with open(db_path, 'r') as f:
-                            db = normalize_gesture_db(json.load(f))
-                    except:
-                        ui.notify('Error reading database', type='negative')
-                        return
-                    
                     cat = sim_cat.value
-                    name = sim_name.value.strip().upper()
-                    
-                    if cat in db and name in db[cat]:
-                        app_logic.marked_poses = list(db[cat][name])
-                        ui.notify(f'Loaded {name} sequence from DB!')
-                        update_marked_ui()
+                    name = sim_name.value.upper()
+
+                    if cat == 'Word':
+                        poses = load_word_gesture(name)
+                        if poses:
+                            app_logic.marked_poses = list(poses)
+                            ui.notify(f'Loaded {name} sequence from DB!')
+                            update_marked_ui()
+                        else:
+                            ui.notify(f'{name} not found in {cat}', type='warning')
                     else:
-                        ui.notify(f'{name} not found in {cat}', type='warning')
+                        try:
+                            with open('gestures.json', 'r', encoding='utf-8') as f:
+                                db = json.load(f)
+                        except Exception:
+                            ui.notify('Error reading database', type='negative')
+                            return
+
+                        if cat in db and name in db[cat]:
+                            app_logic.marked_poses = list(db[cat][name])
+                            ui.notify(f'Loaded {name} sequence from DB!')
+                            update_marked_ui()
+                        else:
+                            ui.notify(f'{name} not found in {cat}', type='warning')
 
                 with ui.row().classes('w-full gap-2 mt-2'):
                     ui.button('Save to DB', on_click=save_to_db).classes('grow').props('icon=save color=secondary')
