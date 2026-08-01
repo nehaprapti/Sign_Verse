@@ -3,19 +3,19 @@
 ================================================================================
 Generated on: 2026-07-22
 Subject: Summary of Recent Changes, Enhancements, and Migration Work Done
-Repository: Sign_Verse (thiga)
+Repository: Sign_Verse (main)
 ================================================================================
 
 This report summarizes the major architectural improvements, new features, and data 
 migration tasks recently introduced in the `Sign_Verse` repository (specifically 
-under the `thiga` directory). These changes lay the groundwork for advanced 
+under the `main` directory). These changes lay the groundwork for advanced 
 "Sign Intelligence", moving from simple word-by-word translations to contextual, 
 sense-disambiguated, and phrase-based sign translation.
 
 --------------------------------------------------------------------------------
 1. ARCHITECTURAL BLUEPRINT
 --------------------------------------------------------------------------------
-* Created `thiga/SIGNVERSE_SIGN_INTELLIGENCE_BLUEPRINT.md`:
+* Created `main/SIGNVERSE_SIGN_INTELLIGENCE_BLUEPRINT.md`:
   - Outlines the multi-layered translation pipeline: Input -> Language -> Linguistic -> 
     Meaning -> Sign -> Animation -> Avatar.
   - Documents strategies for phrase matching, sentence parsing, word sense 
@@ -25,7 +25,7 @@ sense-disambiguated, and phrase-based sign translation.
 --------------------------------------------------------------------------------
 2. CORE LINGUISTIC & GRAMMAR PIPELINE ENHANCEMENTS
 --------------------------------------------------------------------------------
-* Modified `thiga/src/core/grammar.py`:
+* Modified `main/src/core/grammar.py`:
   - Updated `STOP_WORDS` to ignore pure noise grammatical fillers (e.g., A, AN, 
     THE, IS, TO, OF, IN).
   - Added `CONNECTING_WORDS` category (e.g., AND, BUT, BECAUSE) for handling 
@@ -35,7 +35,7 @@ sense-disambiguated, and phrase-based sign translation.
     "EATING" -> "EAT" [CONTINUOUS]).
   - Enhanced preprocessing and reordering logic (e.g., placing WH-words at the end).
 
-* Created `thiga/src/core/senses.py`:
+* Created `main/src/core/senses.py`:
   - Established `SENSE_DATABASE` containing definition, context keywords, and part-of-speech 
     info for words with multiple meanings (e.g., "BAT").
   - Established `PHRASE_DATABASE` for multi-word sign matching (e.g., mapping 
@@ -46,7 +46,7 @@ sense-disambiguated, and phrase-based sign translation.
 --------------------------------------------------------------------------------
 3. VALIDATION & SEQUENCE RESOLUTION
 --------------------------------------------------------------------------------
-* Modified `thiga/src/utils/validator.py`:
+* Modified `main/src/utils/validator.py`:
   - Added `resolve_sequence(tokens)`: Upgraded the system's token-matching logic to a 
     priority-based lookup hierarchy:
       1. Phrase matching (e.g., "HOW ARE YOU")
@@ -57,26 +57,26 @@ sense-disambiguated, and phrase-based sign translation.
 --------------------------------------------------------------------------------
 4. DATA MIGRATION & STORAGE ADAPTATION
 --------------------------------------------------------------------------------
-* Modified `thiga/src/utils/gesture_store.py`:
+* Modified `main/src/utils/gesture_store.py`:
   - Added `save_word_metadata()` to write sense metadata (sense_id, meaning, POS, 
     context clues) to word gesture files.
   - Modified `save_word_gesture()` to preserve or initialize sense metadata when 
     updating gesture frame poses.
 
-* Created `thiga/scratch/migrate_words.py`:
+* Created `main/scratch/migrate_words.py`:
   - A utility to migrate legacy list-based `words/*.json` gesture files into a structured 
     dictionary format that includes metadata and the raw `poses` list.
-  - Successfully migrated 40+ JSON word gesture files under `thiga/words/` (e.g., 
+  - Successfully migrated 40+ JSON word gesture files under `main/words/` (e.g., 
     `GOOD.json`, `EAT.json`, `SCHOOL.json`, etc.) to the new dictionary structure.
 
 * Added New Sense Gestures:
-  - Created `thiga/words/BAT_ANIMAL.json` and `thiga/words/BAT_CRICKET.json` with 
+  - Created `main/words/BAT_ANIMAL.json` and `main/words/BAT_CRICKET.json` with 
     distinct gesture data and contexts.
 
 --------------------------------------------------------------------------------
 5. FRONTEND USER INTERFACE & EDITORS
 --------------------------------------------------------------------------------
-* Modified `thiga/src/main.py`:
+* Modified `main/src/main.py`:
   - Voice Input Integration:
     - Added JavaScript-based Web Speech API helper (`window.getSpeechTranscript()`) 
       to support voice/microphone input.
@@ -90,14 +90,14 @@ sense-disambiguated, and phrase-based sign translation.
 --------------------------------------------------------------------------------
 6. TESTING & VALIDATION
 --------------------------------------------------------------------------------
-* Created `thiga/scratch/test_sign_intelligence.py`:
+* Created `main/scratch/test_sign_intelligence.py`:
   - Validates the grammar preprocessing, tense parsing, phrase mapping, and 
     word sense disambiguation. Runs tests verifying:
       - "How are you" -> maps to HELLO (PHRASE)
       - "I played cricket with a bat" -> resolves to BAT_CRICKET (SENSE)
       - "saw a bat at night" -> resolves to BAT_ANIMAL (SENSE)
 
-* Created `thiga/scratch/test_gesture_store.py`:
+* Created `main/scratch/test_gesture_store.py`:
   - Validates saving and retrieving word metadata to/from disk.
 
 ================================================================================

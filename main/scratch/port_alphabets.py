@@ -3,7 +3,7 @@ import re
 import math
 
 source_dir = r"d:\IMPORTANT_FILES\PROJECT_FILES\Sign_Verse\client\src\Animations\Alphabets"
-target_file = r"d:\IMPORTANT_FILES\PROJECT_FILES\Sign_Verse\thiga\src\animations\alphabet.py"
+target_file = r"d:\IMPORTANT_FILES\PROJECT_FILES\Sign_Verse\main\src\animations\alphabet.py"
 
 alphabet_data = {}
 

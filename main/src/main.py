@@ -2,7 +2,7 @@ import sys
 import os
 from pathlib import Path
 
-# Add the project root (thiga) to path to allow 'from src...' imports
+# Add the project root (main) to path to allow 'from src...' imports
 sys.path.append(str(Path(__file__).parent.parent))
 
 from nicegui import ui, app

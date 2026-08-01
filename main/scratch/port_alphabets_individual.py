@@ -2,7 +2,7 @@ import os
 import re
 
 source_dir = r"d:\IMPORTANT_FILES\PROJECT_FILES\Sign_Verse\client\src\Animations\Alphabets"
-target_dir = r"d:\IMPORTANT_FILES\PROJECT_FILES\Sign_Verse\thiga\src\animations\alphabets"
+target_dir = r"d:\IMPORTANT_FILES\PROJECT_FILES\Sign_Verse\main\src\animations\alphabets"
 
 if not os.path.exists(target_dir):
     os.makedirs(target_dir)

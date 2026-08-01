@@ -1,14 +1,14 @@
-# 🤟 SignVerse: Thiga (Animation & Translation Engine)
+# 🤟 SignVerse: main (Animation & Translation Engine)
 
 ## 📑 Executive Summary
 
-**Thiga** represents the core technical infrastructure of the SignVerse ecosystem, functioning as a high-performance, Python-based engine designed to bridge the gap between natural language and visual signing. By synthesizing advanced NLP techniques with a real-time 3D animation pipeline, Thiga enables the seamless translation of text into linguistically accurate Indian Sign Language (ISL) gestures. The engine is built for modularity and scalability, ensuring that it can serve as a robust foundation for various accessibility-focused applications, from real-time interpretation layers to interactive educational platforms.
+**main** represents the core technical infrastructure of the SignVerse ecosystem, functioning as a high-performance, Python-based engine designed to bridge the gap between natural language and visual signing. By synthesizing advanced NLP techniques with a real-time 3D animation pipeline, main enables the seamless translation of text into linguistically accurate Indian Sign Language (ISL) gestures. The engine is built for modularity and scalability, ensuring that it can serve as a robust foundation for various accessibility-focused applications, from real-time interpretation layers to interactive educational platforms.
 
 ---
 
 ## 📐 Architectural Philosophy & Design
 
-The architecture of Thiga is rooted in a decoupled, multi-layer philosophy that ensures each stage of the translation process is both isolated and optimized. This design allows developers to refine the linguistic rules or animation algorithms independently without disrupting the overall system flow.
+The architecture of main is rooted in a decoupled, multi-layer philosophy that ensures each stage of the translation process is both isolated and optimized. This design allows developers to refine the linguistic rules or animation algorithms independently without disrupting the overall system flow.
 
 ```mermaid
 graph TD
@@ -33,7 +33,7 @@ graph TD
 ```
 
 ### The Linguistic Translation Pipeline
-The process begins in the **Grammar Engine**, which serves as the primary processing hub for incoming text. Unlike a simple word-for-word replacement system, Thiga performs deep syntactic analysis to normalize input, strip semantic noise such as stop-words, and apply ISL-specific reordering rules. This ensures that the resulting sign sequence adheres to the Time-Object-Verb (SOV) structure prevalent in deaf communication, rather than the standard English Subject-Verb-Object (SVO) format.
+The process begins in the **Grammar Engine**, which serves as the primary processing hub for incoming text. Unlike a simple word-for-word replacement system, main performs deep syntactic analysis to normalize input, strip semantic noise such as stop-words, and apply ISL-specific reordering rules. This ensures that the resulting sign sequence adheres to the Time-Object-Verb (SOV) structure prevalent in deaf communication, rather than the standard English Subject-Verb-Object (SVO) format.
 
 ### Validation and Semantic Mapping
 Once the text is structured, it passes through the **Sign Validator**. This layer acts as an intelligent intermediary between the linguistic intent and the available gesture data. It cross-references tokens against the `gestures.json` database to identify direct word matches. In cases where a specific word is missing from the vocabulary, the validator automatically triggers a recursive fallback mechanism, decomposing the word into its constituent characters for **fingerspelling**. This ensures that the engine remains functional even when encountering out-of-vocabulary terms.
@@ -45,7 +45,7 @@ The **Animation Engine** is the heartbeat of the system, responsible for the low
 
 ## 📂 System Directory & Resource Mapping
 
-The project structure is organized to facilitate rapid development and clear separation of concerns. The table below outlines the primary responsibilities of each module within the `thiga` environment.
+The project structure is organized to facilitate rapid development and clear separation of concerns. The table below outlines the primary responsibilities of each module within the `main` environment.
 
 | Path | Technical Responsibility |
 | :--- | :--- |
@@ -89,9 +89,9 @@ The **Avatar Stimulator** is a powerful integrated tool designed for developers 
 
 ## 🚀 Performance, Scalability & Future Vision
 
-Thiga is engineered to maintain a consistent 60 FPS frame rate, even during complex signing sequences. By leveraging **Three.js** through the NiceGUI Scene component, the system offloads the intensive 3D rendering tasks to the client's GPU, ensuring that the Python backend remains free to handle linguistic processing and state management. This architecture allows the system to scale effectively, supporting multiple concurrent users in a web-based environment.
+main is engineered to maintain a consistent 60 FPS frame rate, even during complex signing sequences. By leveraging **Three.js** through the NiceGUI Scene component, the system offloads the intensive 3D rendering tasks to the client's GPU, ensuring that the Python backend remains free to handle linguistic processing and state management. This architecture allows the system to scale effectively, supporting multiple concurrent users in a web-based environment.
 
-Looking forward, the roadmap for Thiga includes the integration of **Morph Targets** for facial expressions, which are critical for conveying the emotional nuances of sign language. Additionally, we are exploring **Pose Blending** techniques to create even smoother transitions between discrete gestures and the development of a dedicated **Websocket API** to allow external applications to stream text directly to the animation engine.
+Looking forward, the roadmap for main includes the integration of **Morph Targets** for facial expressions, which are critical for conveying the emotional nuances of sign language. Additionally, we are exploring **Pose Blending** techniques to create even smoother transitions between discrete gestures and the development of a dedicated **Websocket API** to allow external applications to stream text directly to the animation engine.
 
 ---
 
@@ -104,8 +104,8 @@ Python was selected primarily for its unrivaled ecosystem in NLP and linguistic 
 The engine employs a multi-tiered fallback strategy. It first attempts a direct word-to-gesture mapping. If unsuccessful, it reverts to an ISL-compliant fingerspelling mode. Future updates will include support for contextual synonyms to provide even better coverage for varied vocabularies.
 
 **Is the gesture data compatible with industry-standard game engines?**
-Absolutely. The skeletal data in `gestures.json` adheres to standard naming conventions and Euler rotation formats. This makes it a highly portable asset that can be imported into Unity or Unreal Engine, facilitating the use of Thiga as a "pose-as-a-service" backend for gaming and VR applications.
+Absolutely. The skeletal data in `gestures.json` adheres to standard naming conventions and Euler rotation formats. This makes it a highly portable asset that can be imported into Unity or Unreal Engine, facilitating the use of main as a "pose-as-a-service" backend for gaming and VR applications.
 
 ---
 
-*SignVerse Thiga v1.0.0 — Engineering a More Inclusive World.*
+*SignVerse main v1.0.0 — Engineering a More Inclusive World.*
